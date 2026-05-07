@@ -59,29 +59,25 @@ if choice == "⚙️ Group Management":
 # --- 4. Company Register ---
 elif choice == "🏢 Company Register":
     st.header("🏢 Company Records Management")
-    
     mode = st.radio("Mode", ["🆕 Add New", "✏️ Edit Existing"], horizontal=True)
     
     df_all = pd.read_sql("SELECT * FROM companies", engine)
     groups = pd.read_sql("SELECT group_name FROM client_groups", engine)['group_name'].tolist()
     
-    # 預設值
     d = {'cg': "", 'en': "", 'ch': "", 'idate': None, 'place': "HK", 'p_oth': "", 'ci': "", 'br': "", 'type': "Private Company", 'ra': "", 'ca': "", 'rl': "", 'sl': "", 'cl': "", 'n2e': None, 'n2f': None, 'n2d': False, 'n4e': None, 'n4f': None, 'n4d': False, 'dis': None}
     target_id = None
 
-    # 只有喺有資料嘅情況下先執行 Edit 邏輯
     if mode == "✏️ Edit Existing":
         if not df_all.empty:
             edit_target = st.selectbox("Select Company to Edit", df_all['name_en'].tolist())
             row = df_all[df_all['name_en'] == edit_target].iloc[0]
             
-            # 【修正位】更加穩陣嘅 ID 讀取方法
-            if 'id' in row: target_id = row['id']
-            elif 'ID' in row: target_id = row['ID']
+            # 兼容處理 ID
+            target_id = row['id'] if 'id' in row else row['ID']
             
             d = {'cg': row['client_group'], 'en': row['name_en'], 'ch': row['name_ch'], 'idate': row['incorp_date'], 'place': row['incorp_place'], 'p_oth': row['incorp_place_others'], 'ci': row['ci_no'], 'br': row['br_no'], 'type': row['co_type'], 'ra': row['reg_addr'], 'ca': row['corres_addr'], 'rl': row['round_loc'], 'sl': row['sign_loc'], 'cl': row['seal_loc'], 'n2e': row['nd2a_eff_date'], 'n2f': row['nd2a_file_date'], 'n2d': str(row['nd2a_download']) == 'True', 'n4e': row['nd4_eff_date'], 'n4f': row['nd4_file_date'], 'n4d': str(row['nd4_download']) == 'True', 'dis': row['dissolution_date']}
         else:
-            st.warning("⚠️ 目前資料庫內沒有公司紀錄，請先使用 'Add New' 模式新增。")
+            st.warning("⚠️ 目前資料庫內沒有公司紀錄。")
             st.stop()
 
     st.markdown("### General Information")
@@ -161,9 +157,15 @@ elif choice == "🏢 Company Register":
             st.success("Updated!")
             st.rerun()
         
+        # 🆕 改用最保險的「全表過濾覆蓋法」來刪除
         if b_col2.button("⚠️ Delete Record"):
+            # 1. 喺 DataFrame 入面刪除該行
+            id_col = 'id' if 'id' in df_all.columns else 'ID'
+            df_new = df_all[df_all[id_col] != target_id]
+            # 2. 全份 Overwrite 寫入雲端
+            df_new.to_sql('companies', engine, if_exists='replace', index=False)
+            # 3. 寫入 Log
             with engine.begin() as conn:
-                conn.execute(text('DELETE FROM companies WHERE "id" = :id_val'), {"id_val": target_id})
                 conn.execute(text("INSERT INTO audit_logs (company_name, action, change_details) VALUES (:n, 'DELETE', 'Company Removed')"), {"n": name_en})
             st.warning("Company Deleted!")
             st.rerun()
