@@ -3,7 +3,7 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 from datetime import datetime, timedelta
 
-# --- 1. 雲端 Database 連線 (取代 sqlite3) ---
+# --- 1. 雲端 Database 連線 ---
 try:
     DB_URL = st.secrets["DB_URL"]
     engine = create_engine(DB_URL)
@@ -30,7 +30,7 @@ with engine.begin() as conn:
 st.set_page_config(page_title="ERP Cloud V34", layout="wide")
 choice = st.sidebar.radio("Navigation", ["📊 Dashboard", "🏢 Company Register", "⚙️ Group Management"])
 
-# --- 3. Group Management (保持 V34 功能) ---
+# --- 3. Group Management ---
 if choice == "⚙️ Group Management":
     st.header("⚙️ Client Group Management")
     new_g = st.text_input("Group Name to Add")
@@ -56,25 +56,30 @@ if choice == "⚙️ Group Management":
                 conn.execute(text("DELETE FROM client_groups WHERE group_name=:t"), {"t": target_g})
             st.rerun()
 
-# --- 4. Company Register (排版絕對鎖定 + 同頁編輯) ---
+# --- 4. Company Register (排版絕對鎖定 + 修正 KeyError) ---
 elif choice == "🏢 Company Register":
     st.header("🏢 Company Records Management")
     
-    # 加入模式選擇，唔會郁到下面排版
     mode = st.radio("Mode", ["🆕 Add New", "✏️ Edit Existing"], horizontal=True)
     
+    # 攞資料時將欄位名統一處理
     df_all = pd.read_sql("SELECT * FROM companies", engine)
     groups = pd.read_sql("SELECT group_name FROM client_groups", engine)['group_name'].tolist()
     
-    # 初始化預設值 (V34 欄位)
+    # 初始化預設值
     d = {'cg': "", 'en': "", 'ch': "", 'idate': None, 'place': "HK", 'p_oth': "", 'ci': "", 'br': "", 'type': "Private Company", 'ra': "", 'ca': "", 'rl': "", 'sl': "", 'cl': "", 'n2e': None, 'n2f': None, 'n2d': False, 'n4e': None, 'n4f': None, 'n4d': False, 'dis': None}
     target_id = None
 
     if mode == "✏️ Edit Existing" and not df_all.empty:
         edit_target = st.selectbox("Select Company to Edit", df_all['name_en'].tolist())
         row = df_all[df_all['name_en'] == edit_target].iloc[0]
-        target_id = row['id']
-        d = {'cg': row['client_group'], 'en': row['name_en'], 'ch': row['name_ch'], 'idate': row['incorp_date'], 'place': row['incorp_place'], 'p_oth': row['incorp_place_others'], 'ci': row['ci_no'], 'br': row['br_no'], 'type': row['co_type'], 'ra': row['reg_addr'], 'ca': row['corres_addr'], 'rl': row['round_loc'], 'sl': row['sign_loc'], 'cl': row['seal_loc'], 'n2e': row['nd2a_eff_date'], 'n2f': row['nd2a_file_date'], 'n2d': row['nd2a_download'] == 'True', 'n4e': row['nd4_eff_date'], 'n4f': row['nd4_file_date'], 'n4d': row['nd4_download'] == 'True', 'dis': row['dissolution_date']}
+        
+        # 【修正位：兼容大細寫 id】
+        if 'id' in row: target_id = row['id']
+        elif 'ID' in row: target_id = row['ID']
+        else: target_id = row.name 
+        
+        d = {'cg': row['client_group'], 'en': row['name_en'], 'ch': row['name_ch'], 'idate': row['incorp_date'], 'place': row['incorp_place'], 'p_oth': row['incorp_place_others'], 'ci': row['ci_no'], 'br': row['br_no'], 'type': row['co_type'], 'ra': row['reg_addr'], 'ca': row['corres_addr'], 'rl': row['round_loc'], 'sl': row['sign_loc'], 'cl': row['seal_loc'], 'n2e': row['nd2a_eff_date'], 'n2f': row['nd2a_file_date'], 'n2d': str(row['nd2a_download']) == 'True', 'n4e': row['nd4_eff_date'], 'n4f': row['nd4_file_date'], 'n4d': str(row['nd4_download']) == 'True', 'dis': row['dissolution_date']}
 
     st.markdown("### General Information")
     client_group = st.selectbox("Select Client Group", [""] + groups, index=(groups.index(d['cg'])+1 if d['cg'] in groups else 0))
@@ -135,7 +140,6 @@ elif choice == "🏢 Company Register":
             st.success("Saved!")
     else:
         if st.button("Update Record"):
-            # 修正 SyntaxError 斷開問題
             with engine.begin() as conn:
                 sql = text("""
                     UPDATE companies SET 
