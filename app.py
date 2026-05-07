@@ -3,15 +3,15 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 from datetime import datetime, timedelta
 
-# --- 1. 雲端連線 ---
+# --- 1. 雲端連線 (核心修改，不影響介面) ---
 try:
     DB_URL = st.secrets["DB_URL"]
     engine = create_engine(DB_URL)
 except:
-    st.error("❌ 請在 Secrets 填寫 DB_URL")
+    st.error("❌ Secrets 未設定好 DB_URL")
     st.stop()
 
-# 初始化變更紀錄表 (只會喺第一次執行時建立)
+# 自動建立變更紀錄表
 with engine.begin() as conn:
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS audit_logs (
@@ -23,17 +23,20 @@ with engine.begin() as conn:
         )
     """))
 
+# --- 2. 介面設定 (跟返 V34) ---
 st.set_page_config(page_title="Secretarial System V34", layout="wide")
 st.sidebar.title("管理選單")
 choice = st.sidebar.radio("Navigation", ["📊 Dashboard", "🏢 Company Register", "⚙️ Group Management"])
 
 if choice == "🏢 Company Register":
     st.header("🏢 Company Records Management")
+    # 模式選擇
     mode = st.radio("模式選擇", ["🆕 新增公司", "✏️ 編輯現有公司"], horizontal=True)
     
     df_all = pd.read_sql("SELECT * FROM companies", engine)
     groups = pd.read_sql("SELECT group_name FROM client_groups", engine)['group_name'].tolist()
     
+    # 預設資料
     default_data = {'group': "", 'en': "", 'ch': "", 'date': None, 'place': "HK", 'others': "", 'ci': "", 'br': ""}
     target_id = None
 
@@ -48,6 +51,7 @@ if choice == "🏢 Company Register":
         }
 
     st.write("---")
+    # 跟返 CR Form 標準排版，唔加任何廢話提示
     client_group = st.selectbox("Select Client Group", [""] + groups, index=(groups.index(default_data['group'])+1 if default_data['group'] in groups else 0))
     
     col1, col2 = st.columns(2)
@@ -55,7 +59,6 @@ if choice == "🏢 Company Register":
     name_ch = col2.text_input("Company Chinese Name", value=default_data['ch'])
     
     col3, col4 = st.columns(2)
-    # 還原：唔再加多餘提示，跟返標準 Date Input
     inc_date = col3.date_input("Date of Incorporation", value=default_data['date'])
     
     place_list = ["HK", "BVI", "Cayman Island", "Others"]
@@ -76,7 +79,7 @@ if choice == "🏢 Company Register":
             st.rerun()
     else:
         if st.button("🆙 更新資料"):
-            # 紀錄變更
+            # 紀錄變更內容
             changes = []
             if name_en != default_data['en']: changes.append(f"EN: {default_data['en']} -> {name_en}")
             if ci_no != default_data['ci']: changes.append(f"CI: {default_data['ci']} -> {ci_no}")
@@ -86,7 +89,7 @@ if choice == "🏢 Company Register":
                     {"cg": client_group, "en": name_en, "ch": name_ch, "dt": inc_date, "pl": inc_place, "oth": place_others, "ci": ci_no, "br": br_no, "id": target_id})
                 conn.execute(text("INSERT INTO audit_logs (company_name, action, change_details) VALUES (:name, 'UPDATE', :detail)"),
                     {"name": name_en, "detail": ", ".join(changes) if changes else "資料更新"})
-            st.success("更新完成")
+            st.success("更新成功")
             st.rerun()
 
 elif choice == "📊 Dashboard":
