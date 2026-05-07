@@ -11,7 +11,7 @@ except:
     st.error("❌ 請在 Streamlit Secrets 填寫正確的 DB_URL")
     st.stop()
 
-# --- 2. Navigation (跟返 V34) ---
+# --- 2. Navigation (保持 V34) ---
 st.set_page_config(page_title="ERP Cloud V34", layout="wide")
 choice = st.sidebar.radio("Navigation", ["📊 Dashboard", "🏢 Company Register", "⚙️ Group Management"])
 
@@ -40,7 +40,7 @@ if choice == "⚙️ Group Management":
                 conn.execute(text("DELETE FROM client_groups WHERE group_name=:t"), {"t": target_g})
             st.rerun()
 
-# --- 4. Company Register (排版鎖定 + 確認機制) ---
+# --- 4. Company Register (排版絕對鎖定 + 確認機制) ---
 elif choice == "🏢 Company Register":
     st.header("🏢 Company Records Management")
     
@@ -49,15 +49,18 @@ elif choice == "🏢 Company Register":
     df_all = pd.read_sql("SELECT * FROM companies", engine)
     groups = pd.read_sql("SELECT group_name FROM client_groups", engine)['group_name'].tolist()
     
-    # 預設值 (全欄位鎖定)
+    # 預設值初始化 (V34 結構)
     d = {'cg': "", 'en': "", 'ch': "", 'idate': None, 'place': "HK", 'p_oth': "", 'ci': "", 'br': "", 'type': "Private Company", 'ra': "", 'ca': "", 'rl': "", 'sl': "", 'cl': "", 'n2e': None, 'n2f': None, 'n2d': False, 'n4e': None, 'n4f': None, 'n4d': False, 'dis': None}
     target_id = None
 
     if mode == "✏️ Edit Existing" and not df_all.empty:
         edit_target = st.selectbox("Select Company to Edit", df_all['name_en'].tolist())
         row = df_all[df_all['name_en'] == edit_target].iloc[0]
+        
+        # 修正 ID 讀取
         target_id = row['id'] if 'id' in row else row.get('ID', row.name)
         
+        # 精準對應 V34 原始代碼欄位名
         d = {
             'cg': row['client_group'], 'en': row['name_en'], 'ch': row['name_ch'], 'idate': row['incorp_date'],
             'place': row['incorp_place'], 'p_oth': row['incorp_place_others'], 'ci': row['ci_no'], 'br': row['br_no'],
@@ -140,6 +143,7 @@ elif choice == "🏢 Company Register":
             st.write("Confirm update existing record?")
             if st.button("Yes, Confirm Update"):
                 with engine.begin() as conn:
+                    # 呢度係最關鍵嘅 SQL 欄位對齊
                     sql = text("""
                         UPDATE companies SET 
                         client_group=:cg, name_en=:en, name_ch=:ch, incorp_date=:idate, 
