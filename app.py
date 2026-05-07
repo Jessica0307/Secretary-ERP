@@ -3,15 +3,15 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 from datetime import datetime, timedelta
 
-# --- 1. 雲端連線 (核心修改，不影響介面) ---
+# --- 1. 雲端 Database 連線 (取代 sqlite3) ---
 try:
     DB_URL = st.secrets["DB_URL"]
     engine = create_engine(DB_URL)
 except:
-    st.error("❌ Secrets 未設定好 DB_URL")
+    st.error("❌ Please set DB_URL in Streamlit Secrets.")
     st.stop()
 
-# 自動建立變更紀錄表
+# 初始化變更紀錄表
 with engine.begin() as conn:
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS audit_logs (
@@ -23,89 +23,122 @@ with engine.begin() as conn:
         )
     """))
 
-# --- 2. 介面設定 (跟返 V34) ---
-st.set_page_config(page_title="Secretarial System V34", layout="wide")
-st.sidebar.title("管理選單")
-choice = st.sidebar.radio("Navigation", ["📊 Dashboard", "🏢 Company Register", "⚙️ Group Management"])
+# --- 2. Navigation (100% V34) ---
+st.set_page_config(page_title="Secretarial System V34 Cloud", layout="wide")
+choice = st.sidebar.radio("Navigation", ["📊 Dashboard", "🏢 Company Register", "📜 Statutory Registers", "⚙️ Group Management"])
 
-if choice == "🏢 Company Register":
+# --- 3. Group Management (100% V34 佈局) ---
+if choice == "⚙️ Group Management":
+    st.header("⚙️ Client Group Management")
+    new_g = st.text_input("Group Name to Add")
+    if st.button("Add Group"):
+        try:
+            pd.DataFrame([{'group_name': new_g}]).to_sql('client_groups', engine, if_exists='append', index=False)
+            st.rerun()
+        except: st.error("Exists.")
+    
+    st.write("---")
+    g_df = pd.read_sql("SELECT * FROM client_groups", engine)
+    if not g_df.empty:
+        target_g = st.selectbox("Select Group", g_df['group_name'].tolist())
+        col_edit, col_del = st.columns(2)
+        new_name = col_edit.text_input("New Name")
+        if col_edit.button("Update"):
+            with engine.begin() as conn:
+                conn.execute(text("UPDATE client_groups SET group_name=:n WHERE group_name=:o"), {"n": new_name, "o": target_g})
+                conn.execute(text("UPDATE companies SET client_group=:n WHERE client_group=:o"), {"n": new_name, "o": target_g})
+            st.rerun()
+        if col_del.button("⚠️ Delete"):
+            with engine.begin() as conn:
+                conn.execute(text("DELETE FROM client_groups WHERE group_name=:g"), {"g": target_g})
+            st.rerun()
+
+# --- 4. Company Register (V34 排版絕對鎖定 + 同頁 Edit 功能) ---
+elif choice == "🏢 Company Register":
     st.header("🏢 Company Records Management")
-    # 模式選擇
-    mode = st.radio("模式選擇", ["🆕 新增公司", "✏️ 編輯現有公司"], horizontal=True)
+    
+    # 加入模式切換 (不影響下方排版)
+    mode = st.radio("Mode", ["🆕 Add New", "✏️ Edit Existing"], horizontal=True)
     
     df_all = pd.read_sql("SELECT * FROM companies", engine)
-    groups = pd.read_sql("SELECT group_name FROM client_groups", engine)['group_name'].tolist()
+    existing_groups = pd.read_sql("SELECT group_name FROM client_groups", engine)['group_name'].tolist()
     
-    # 預設資料
-    default_data = {'group': "", 'en': "", 'ch': "", 'date': None, 'place': "HK", 'others': "", 'ci': "", 'br': ""}
+    # 初始化資料 (Edit 模式會自動填入)
+    default = {'cg': "", 'en': "", 'ch': "", 'idate': None, 'place': "HK", 'oth': "", 'ci': "", 'br': "", 'type': "Private Company", 'ra': "", 'ca': "", 'rl': "", 'sl': "", 'cl': "", 'n2e': None, 'n2f': None, 'n2d': False, 'n4e': None, 'n4f': None, 'n4d': False, 'dis': None}
     target_id = None
 
-    if mode == "✏️ 編輯現有公司" and not df_all.empty:
-        edit_target = st.selectbox("請選擇要修改的公司", df_all['name_en'].tolist())
+    if mode == "✏️ Edit Existing" and not df_all.empty:
+        edit_target = st.selectbox("Select Company to Edit", df_all['name_en'].tolist())
         row = df_all[df_all['name_en'] == edit_target].iloc[0]
         target_id = row['id']
-        default_data = {
-            'group': row['client_group'], 'en': row['name_en'], 'ch': row['name_ch'],
-            'date': row['incorp_date'], 'place': row['incorp_place'], 
-            'others': row['incorp_place_others'], 'ci': row['ci_no'], 'br': row['br_no']
+        default = {
+            'cg': row['client_group'], 'en': row['name_en'], 'ch': row['name_ch'], 'idate': row['incorp_date'],
+            'place': row['incorp_place'], 'oth': row['incorp_place_others'], 'ci': row['ci_no'], 'br': row['br_no'],
+            'type': row['co_type'], 'ra': row['reg_addr'], 'ca': row['corres_addr'], 'rl': row['round_loc'],
+            'sl': row['sign_loc'], 'cl': row['seal_loc'], 'n2e': row['nd2a_eff_date'], 'n2f': row['nd2a_file_date'],
+            'n2d': row['nd2a_download'] == 'True', 'n4e': row['nd4_eff_date'], 'n4f': row['nd4_file_date'],
+            'n4d': row['nd4_download'] == 'True', 'dis': row['dissolution_date']
         }
 
-    st.write("---")
-    # 跟返 CR Form 標準排版，唔加任何廢話提示
-    client_group = st.selectbox("Select Client Group", [""] + groups, index=(groups.index(default_data['group'])+1 if default_data['group'] in groups else 0))
+    st.markdown("### General Information")
+    client_group = st.selectbox("Select Client Group", [""] + existing_groups, index=(existing_groups.index(default['cg'])+1 if default['cg'] in existing_groups else 0))
     
     col1, col2 = st.columns(2)
-    name_en = col1.text_input("Company English Name", value=default_data['en'])
-    name_ch = col2.text_input("Company Chinese Name", value=default_data['ch'])
+    name_en = col1.text_input("Company English Name", value=default['en'])
+    name_ch = col2.text_input("Company Chinese Name", value=default['ch'])
     
     col3, col4 = st.columns(2)
-    inc_date = col3.date_input("Date of Incorporation", value=default_data['date'])
-    
-    place_list = ["HK", "BVI", "Cayman Island", "Others"]
-    inc_place = col4.selectbox("Place of Incorporation", place_list, index=place_list.index(default_data['place']))
-    
-    place_others = st.text_input("Please specify country", value=default_data['others']) if inc_place == "Others" else ""
-    
+    inc_date = col3.date_input("Date of Incorporation", value=default['idate'])
+    inc_place = col4.selectbox("Place of Incorporation", ["HK", "BVI", "Cayman Island", "Others"], index=["HK", "BVI", "Cayman Island", "Others"].index(default['place']))
+    place_others = st.text_input("Specify Country", value=default['oth']) if inc_place == "Others" else ""
+
     st.write("---")
     col_ci, col_br = st.columns(2)
-    ci_no = col_ci.text_input("CI Number", value=default_data['ci'])
-    br_no = col_br.text_input("BR Number", value=default_data['br'])
-
-    if mode == "🆕 新增公司":
-        if st.button("💾 儲存資料"):
-            new_data = {'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no}
-            pd.DataFrame([new_data]).to_sql('companies', engine, if_exists='append', index=False)
-            st.success("儲存成功")
-            st.rerun()
-    else:
-        if st.button("🆙 更新資料"):
-            # 紀錄變更內容
-            changes = []
-            if name_en != default_data['en']: changes.append(f"EN: {default_data['en']} -> {name_en}")
-            if ci_no != default_data['ci']: changes.append(f"CI: {default_data['ci']} -> {ci_no}")
-            
-            with engine.begin() as conn:
-                conn.execute(text("UPDATE companies SET client_group=:cg, name_en=:en, name_ch=:ch, incorp_date=:dt, incorp_place=:pl, incorp_place_others=:oth, ci_no=:ci, br_no=:br WHERE id=:id"),
-                    {"cg": client_group, "en": name_en, "ch": name_ch, "dt": inc_date, "pl": inc_place, "oth": place_others, "ci": ci_no, "br": br_no, "id": target_id})
-                conn.execute(text("INSERT INTO audit_logs (company_name, action, change_details) VALUES (:name, 'UPDATE', :detail)"),
-                    {"name": name_en, "detail": ", ".join(changes) if changes else "資料更新"})
-            st.success("更新成功")
-            st.rerun()
-
-elif choice == "📊 Dashboard":
-    st.header("📊 Master Dashboard")
-    st.subheader("🏢 公司清單")
-    st.dataframe(pd.read_sql("SELECT * FROM companies", engine), use_container_width=True)
+    ci_no = col_ci.text_input("CI Number", value=default['ci'])
+    br_no = col_br.text_input("BR Number", value=default['br'])
+    co_type = st.selectbox("Company Type", ["Private Company", "Public Company", "Company Limited by Guarantee"], index=["Private Company", "Public Company", "Company Limited by Guarantee"].index(default['type']))
     
     st.write("---")
-    st.subheader("🕒 修改紀錄")
-    log_df = pd.read_sql("SELECT company_name, action, change_details, changed_at FROM audit_logs ORDER BY changed_at DESC", engine)
-    st.table(log_df)
+    st.markdown("### 📝 Company Secretary Appointment (ND2A)")
+    c1, c2, c3, c4 = st.columns([2, 2, 2, 1])
+    nd2a_eff = c1.date_input("Effective Date (Appt)", value=default['n2e'], key="n2e")
+    nd2a_file = c2.date_input("Filing Date (ND2A)", value=default['n2f'], key="n2f")
+    if nd2a_eff:
+        c3.warning(f"Statutory Period: 15 days\n\n⚠️ Deadline: {nd2a_eff + timedelta(days=15)}")
+    else: c3.info("Statutory Period: 15 days")
+    nd2a_dl = c4.checkbox("Downloaded", value=default['n2d'], key="n2d")
 
-elif choice == "⚙️ Group Management":
-    st.header("⚙️ Group Management")
-    new_g = st.text_input("New Group Name")
-    if st.button("Add"):
-        pd.DataFrame([{'group_name': new_g}]).to_sql('client_groups', engine, if_exists='append', index=False)
-        st.success("Success")
-        st.rerun()
+    st.markdown("### 📝 Company Secretary Resignation (ND4)")
+    r1, r2, r3, r4 = st.columns([2, 2, 2, 1])
+    nd4_eff = r1.date_input("Effective Date (Resign)", value=default['n4e'], key="n4e")
+    nd4_file = r2.date_input("Filing Date (ND4)", value=default['n4f'], key="n4f")
+    if nd4_eff:
+        r3.warning(f"Statutory Period: 15 days\n\n⚠️ Deadline: {nd4_eff + timedelta(days=15)}")
+    else: r3.info("Statutory Period: 15 days")
+    nd4_dl = r4.checkbox("Downloaded", value=default['n4d'], key="n4d")
+
+    st.write("---")
+    st.markdown("### 📍 Address & Contact")
+    col_reg, col_cor = st.columns(2)
+    reg_addr = col_reg.text_area("Registered Office Address", value=default['ra'])
+    corres_addr = col_cor.text_area("Correspondence Address", value=default['ca'])
+    
+    st.markdown("### 🗄️ Seal Storage") 
+    l1, l2, l3 = st.columns(3)
+    round_l = l1.text_input("Round Chop Location", value=default['rl'])
+    sign_l = l2.text_input("Signature Chop Location", value=default['sl'])
+    common_l = l3.text_input("Common Seal Location", value=default['cl'])
+    
+    st.write("---")
+    dis_date = st.date_input("Company Dissolution Date", value=default['dis'])
+    
+    # 按鈕邏輯
+    if mode == "🆕 Add New":
+        if st.button("Save To Records"):
+            new_data = {'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no, 'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr, 'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l, 'nd2a_eff_date': nd2a_eff, 'nd2a_file_date': nd2a_file, 'nd2a_download': str(nd2a_dl), 'nd4_eff_date': nd4_eff, 'nd4_file_date': nd4_file, 'nd4_download': str(nd4_dl), 'dissolution_date': dis_date}
+            pd.DataFrame([new_data]).to_sql('companies', engine, if_exists='append', index=False)
+            st.success("Saved!")
+    else:
+        if st.button("Update Record"):
+            with engine.begin() as conn:
+                conn.execute(text("""UPDATE companies SET client_group=:cg, name_en=:en, name_ch=:ch, incorp_date=:idate, incor
