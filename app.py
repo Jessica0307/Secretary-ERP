@@ -29,7 +29,6 @@ if choice == "⚙️ Group Management":
     g_df = pd.read_sql("SELECT * FROM client_groups", engine)
     if not g_df.empty:
         target_g = st.selectbox("Select Group", g_df['group_name'].tolist())
-        # 新增 Group Delete 的確認
         with st.popover("⚠️ Delete Group"):
             st.warning(f"Delete group '{target_g}'?")
             if st.button("Confirm Delete Group"):
@@ -82,37 +81,46 @@ elif choice == "🏢 Company Register":
     co_type = st.selectbox("Company Type", ["Private Company", "Public Company", "Company Limited by Guarantee"], index=["Private Company", "Public Company", "Company Limited by Guarantee"].index(d['type']))
     
     st.write("---")
-    st.markdown("### 📝 ND2A Reminder")
+    # --- ND2A 位 (100% 還原法定日數顯示) ---
+    st.markdown("### 📝 Company Secretary Appointment (ND2A)")
     c1, c2, c3, c4 = st.columns([2, 2, 2, 1])
     nd2a_eff = c1.date_input("Effective Date (Appt)", value=d['n2e'], key="n2e")
     nd2a_file = c2.date_input("Filing Date (ND2A)", value=d['n2f'], key="n2f")
     if nd2a_eff:
-        c3.warning(f"Deadline: {nd2a_eff + timedelta(days=15)}")
+        # 直接標明法定日數 15 日
+        c3.warning(f"Statutory Period: 15 days\n\n⚠️ Deadline: {nd2a_eff + timedelta(days=15)}")
+    else: 
+        c3.info("Statutory Period: 15 days")
     nd2a_dl = c4.checkbox("Downloaded", value=d['n2d'], key="n2d")
 
-    st.markdown("### 📝 ND4 Reminder")
+    # --- ND4 位 (100% 還原法定日數顯示) ---
+    st.markdown("### 📝 Company Secretary Resignation (ND4)")
     r1, r2, r3, r4 = st.columns([2, 2, 2, 1])
     nd4_eff = r1.date_input("Effective Date (Resign)", value=d['n4e'], key="n4e")
     nd4_file = r2.date_input("Filing Date (ND4)", value=d['n4f'], key="n4f")
     if nd4_eff:
-        r3.warning(f"Deadline: {nd4_eff + timedelta(days=15)}")
+        # 直接標明法定日數 15 日
+        r3.warning(f"Statutory Period: 15 days\n\n⚠️ Deadline: {nd4_eff + timedelta(days=15)}")
+    else: 
+        r3.info("Statutory Period: 15 days")
     nd4_dl = r4.checkbox("Downloaded", value=d['n4d'], key="n4d")
 
     st.write("---")
-    st.markdown("### 📍 Address & Seal")
+    st.markdown("### 📍 Address & Contact")
     col_reg, col_cor = st.columns(2)
     reg_addr = col_reg.text_area("Registered Office Address", value=d['ra'])
     corres_addr = col_cor.text_area("Correspondence Address", value=d['ca'])
     
+    st.markdown("### 🗄️ Seal Storage") 
     l1, l2, l3 = st.columns(3)
-    round_l = l1.text_input("Round Chop", value=d['rl'])
-    sign_l = l2.text_input("Signature Chop", value=d['sl'])
-    common_l = l3.text_input("Common Seal", value=d['cl'])
+    round_l = l1.text_input("Round Chop Location", value=d['rl'])
+    sign_l = l2.text_input("Signature Chop Location", value=d['sl'])
+    common_l = l3.text_input("Common Seal Location", value=d['cl'])
     
     st.write("---")
-    dis_date = st.date_input("Dissolution Date", value=d['dis'])
+    dis_date = st.date_input("Company Dissolution Date", value=d['dis'])
     
-    # --- 保存與確認邏輯 ---
+    # --- 確認與保存邏輯 (Pandas 覆蓋法 + 確認 Popover) ---
     if mode == "🆕 Add New":
         with st.popover("💾 Save To Cloud"):
             st.write("Confirm save new company?")
@@ -123,7 +131,6 @@ elif choice == "🏢 Company Register":
                 st.rerun()
     else:
         col_b1, col_b2 = st.columns(2)
-        # --- UPDATE 確認 ---
         with col_b1.popover("🆙 Update Record"):
             st.write("Confirm update this record?")
             if st.button("Yes, Confirm Update"):
@@ -134,11 +141,9 @@ elif choice == "🏢 Company Register":
                 st.success("Updated!")
                 st.rerun()
             
-        # --- DELETE 強烈確認 ---
         with col_b2.popover("🚨 DELETE RECORD"):
             st.markdown("### ⚠️ DANGER ZONE")
-            st.error(f"You are deleting: **{target_name}**")
-            st.write("This cannot be undone!")
+            st.error(f"Deleting: **{target_name}**")
             if st.button("🔥 YES, DELETE FOREVER"):
                 df_filtered = df_all[df_all['name_en'] != target_name]
                 df_filtered.to_sql('companies', engine, if_exists='replace', index=False)
