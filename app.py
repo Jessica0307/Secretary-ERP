@@ -72,12 +72,17 @@ elif choice == "🏢 Company Register":
             edit_target = st.selectbox("Select Company to Edit", df_all['name_en'].tolist())
             row = df_all[df_all['name_en'] == edit_target].iloc[0]
             
-            # 兼容處理 ID
-            target_id = row['id'] if 'id' in row else row['ID']
+            # 【最終修正】唔再用名搵，直接用位置或者所有可能嘅 ID 名
+            id_options = [c for c in df_all.columns if c.lower() == 'id']
+            if id_options:
+                target_id = row[id_options[0]]
+            else:
+                # 如果真係乜名都冇，就攞第一欄 (通常就係 ID)
+                target_id = row.iloc[0]
             
             d = {'cg': row['client_group'], 'en': row['name_en'], 'ch': row['name_ch'], 'idate': row['incorp_date'], 'place': row['incorp_place'], 'p_oth': row['incorp_place_others'], 'ci': row['ci_no'], 'br': row['br_no'], 'type': row['co_type'], 'ra': row['reg_addr'], 'ca': row['corres_addr'], 'rl': row['round_loc'], 'sl': row['sign_loc'], 'cl': row['seal_loc'], 'n2e': row['nd2a_eff_date'], 'n2f': row['nd2a_file_date'], 'n2d': str(row['nd2a_download']) == 'True', 'n4e': row['nd4_eff_date'], 'n4f': row['nd4_file_date'], 'n4d': str(row['nd4_download']) == 'True', 'dis': row['dissolution_date']}
         else:
-            st.warning("⚠️ 目前資料庫內沒有公司紀錄。")
+            st.warning("⚠️ 沒有紀錄可編輯")
             st.stop()
 
     st.markdown("### General Information")
@@ -157,14 +162,9 @@ elif choice == "🏢 Company Register":
             st.success("Updated!")
             st.rerun()
         
-        # 🆕 改用最保險的「全表過濾覆蓋法」來刪除
         if b_col2.button("⚠️ Delete Record"):
-            # 1. 喺 DataFrame 入面刪除該行
-            id_col = 'id' if 'id' in df_all.columns else 'ID'
-            df_new = df_all[df_all[id_col] != target_id]
-            # 2. 全份 Overwrite 寫入雲端
+            df_new = df_all[df_all.iloc[:, 0] != target_id] # 用位置過濾，最穩陣
             df_new.to_sql('companies', engine, if_exists='replace', index=False)
-            # 3. 寫入 Log
             with engine.begin() as conn:
                 conn.execute(text("INSERT INTO audit_logs (company_name, action, change_details) VALUES (:n, 'DELETE', 'Company Removed')"), {"n": name_en})
             st.warning("Company Deleted!")
