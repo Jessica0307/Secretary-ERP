@@ -40,7 +40,7 @@ if choice == "⚙️ Group Management":
                 conn.execute(text("DELETE FROM client_groups WHERE group_name=:t"), {"t": target_g})
             st.rerun()
 
-# --- 4. Company Register (排版鎖定) ---
+# --- 4. Company Register ---
 elif choice == "🏢 Company Register":
     st.header("🏢 Company Records Management")
     mode = st.radio("Mode", ["🆕 Add New", "✏️ Edit Existing"], horizontal=True)
@@ -48,14 +48,12 @@ elif choice == "🏢 Company Register":
     df_all = pd.read_sql("SELECT * FROM companies", engine)
     groups = pd.read_sql("SELECT group_name FROM client_groups", engine)['group_name'].tolist()
     
-    # 預設值 (對應 V34 表格結構)
     d = {'cg': "", 'en': "", 'ch': "", 'idate': None, 'place': "HK", 'p_oth': "", 'ci': "", 'br': "", 'type': "Private Company", 'ra': "", 'ca': "", 'rl': "", 'sl': "", 'cl': "", 'n2e': None, 'n2f': None, 'n2d': False, 'n4e': None, 'n4f': None, 'n4d': False, 'dis': None}
     target_id = None
 
     if mode == "✏️ Edit Existing" and not df_all.empty:
         edit_target = st.selectbox("Select Company to Edit", df_all['name_en'].tolist())
         row = df_all[df_all['name_en'] == edit_target].iloc[0]
-        # 處理 PostgreSQL 欄位名大小寫
         target_id = row['id'] if 'id' in row else row.get('ID', row.name)
         d = {
             'cg': row['client_group'], 'en': row['name_en'], 'ch': row['name_ch'], 'idate': row['incorp_date'],
@@ -117,6 +115,7 @@ elif choice == "🏢 Company Register":
     st.write("---")
     dis_date = st.date_input("Company Dissolution Date", value=d['dis'])
     
+    # --- Buttons ---
     if mode == "🆕 Add New":
         with st.popover("💾 Save To Records"):
             if st.button("Yes, Confirm Save"):
@@ -128,27 +127,15 @@ elif choice == "🏢 Company Register":
         b1, b2 = st.columns(2)
         with b1.popover("🆙 Update Record"):
             if st.button("Yes, Confirm Update"):
+                # 用 DataFrame 覆蓋法，唔使手寫 SQL 語句，徹底解決 ProgrammingError
                 with engine.begin() as conn:
-                    # 呢度 100% 對齊你 V34 原始代碼 INSERT 段落嘅 21 個欄位名
-                    sql = text("""
-                        UPDATE companies SET 
-                        client_group=:cg, name_en=:en, name_ch=:ch, incorp_date=:idate, 
-                        incorp_place=:place, incorp_place_others=:p_oth, ci_no=:ci, br_no=:br, 
-                        co_type=:type, reg_addr=:ra, corres_addr=:ca, round_loc=:rl, 
-                        sign_loc=:sl, seal_loc=:cl, nd2a_eff_date=:n2e, nd2a_file_date=:n2f, 
-                        nd2a_download=:n2d, nd4_eff_date=:n4e, nd4_file_date=:n4f, 
-                        nd4_download=:n4d, dissolution_date=:dis 
-                        WHERE id=:id
-                    """)
-                    conn.execute(sql, {
-                        "cg": client_group, "en": name_en, "ch": name_ch, "idate": inc_date, 
-                        "place": inc_place, "p_oth": place_others, "ci": ci_no, "br": br_no, 
-                        "type": co_type, "ra": reg_addr, "ca": corres_addr, "rl": round_l, 
-                        "sl": sign_l, "cl": common_l, "n2e": nd2a_eff, "n2f": nd2a_file, 
-                        "n2d": str(nd2a_dl), "n4e": nd4_eff, "n4f": nd4_file, "n4d": str(nd4_dl), 
-                        "dis": dis_date, "id": target_id
-                    })
-                st.success("Updated!")
+                    # 1. 刪除舊嗰筆資料
+                    conn.execute(text("DELETE FROM companies WHERE id = :id"), {"id": target_id})
+                    # 2. 準備新資料（保持原本 ID）
+                    updated_data = {'id': target_id, 'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no, 'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr, 'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l, 'nd2a_eff_date': nd2a_eff, 'nd2a_file_date': nd2a_file, 'nd2a_download': str(nd2a_dl), 'nd4_eff_date': nd4_eff, 'nd4_file_date': nd4_file, 'nd4_download': str(nd4_dl), 'dissolution_date': dis_date}
+                    # 3. 寫入新資料
+                    pd.DataFrame([updated_data]).to_sql('companies', engine, if_exists='append', index=False)
+                st.success("Updated Successfully!")
                 st.rerun()
         
         with b2.popover("🚨 DELETE RECORD"):
