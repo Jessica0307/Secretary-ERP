@@ -29,18 +29,10 @@ if choice == "⚙️ Group Management":
     g_df = pd.read_sql("SELECT * FROM client_groups", engine)
     if not g_df.empty:
         target_g = st.selectbox("Select Group", g_df['group_name'].tolist())
-        col_edit, col_del = st.columns(2)
-        new_name = col_edit.text_input("New Name")
-        if col_edit.button("Update"):
-            with engine.begin() as conn:
-                # 兼容處理：無論欄位名是大寫還是細寫
-                c_name = "group_name" if "group_name" in g_df.columns else "GROUP_NAME"
-                conn.execute(text(f'UPDATE client_groups SET "{c_name}"=:n WHERE "{c_name}"=:t'), {"n": new_name, "t": target_g})
-            st.rerun()
-        if col_del.button("⚠️ Delete Group"):
-            with engine.begin() as conn:
-                c_name = "group_name" if "group_name" in g_df.columns else "GROUP_NAME"
-                conn.execute(text(f'DELETE FROM client_groups WHERE "{c_name}"=:t'), {"t": target_g})
+        if st.button("⚠️ Delete Group"):
+            # 唔用 SQL，用 Pandas 過濾後覆蓋
+            new_df = g_df[g_df['group_name'] != target_g]
+            new_df.to_sql('client_groups', engine, if_exists='replace', index=False)
             st.rerun()
 
 # --- 4. Company Register ---
@@ -51,16 +43,12 @@ elif choice == "🏢 Company Register":
     df_all = pd.read_sql("SELECT * FROM companies", engine)
     groups = pd.read_sql("SELECT group_name FROM client_groups", engine)['group_name'].tolist()
     
-    # 預設值
     d = {'cg': "", 'en': "", 'ch': "", 'idate': None, 'place': "HK", 'p_oth': "", 'ci': "", 'br': "", 'type': "Private Company", 'ra': "", 'ca': "", 'rl': "", 'sl': "", 'cl': "", 'n2e': None, 'n2f': None, 'n2d': False, 'n4e': None, 'n4f': None, 'n4d': False, 'dis': None}
-    target_id = None
+    target_name = None
 
     if mode == "✏️ Edit Existing" and not df_all.empty:
-        edit_target = st.selectbox("Select Company to Edit", df_all['name_en'].tolist())
-        row = df_all[df_all['name_en'] == edit_target].iloc[0]
-        
-        # 【修正 KeyError 核心位】：嘗試多種方式獲取 ID
-        target_id = row.get('id', row.get('ID', row.name))
+        target_name = st.selectbox("Select Company to Edit", df_all['name_en'].tolist())
+        row = df_all[df_all['name_en'] == target_name].iloc[0]
         
         d = {
             'cg': row.get('client_group', ""), 'en': row.get('name_en', ""), 'ch': row.get('name_ch', ""), 
@@ -130,21 +118,22 @@ elif choice == "🏢 Company Register":
             st.rerun()
     else:
         col_b1, col_b2 = st.columns(2)
+        # --- UPDATE 邏輯 (不使用 SQL DELETE，改用 Pandas 過濾後 Replace) ---
         if col_b1.button("🆙 Update Record"):
-            with engine.begin() as conn:
-                # 嘗試偵測真正的 ID 欄位名
-                id_name = "id" if "id" in df_all.columns else "ID"
-                # 先刪除舊的，再新增新的 (避免手寫複雜的 Update SQL 報錯)
-                conn.execute(text(f'DELETE FROM companies WHERE "{id_name}" = :id'), {"id": target_id})
-                updated_data = {id_name: target_id, 'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no, 'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr, 'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l, 'nd2a_eff_date': nd2a_eff, 'nd2a_file_date': nd2a_file, 'nd2a_download': str(nd2a_dl), 'nd4_eff_date': nd4_eff, 'nd4_file_date': nd4_file, 'nd4_download': str(nd4_dl), 'dissolution_date': dis_date}
-                pd.DataFrame([updated_data]).to_sql('companies', engine, if_exists='append', index=False)
+            # 1. 喺原本嘅 DataFrame 剔除舊嗰筆
+            df_filtered = df_all[df_all['name_en'] != target_name]
+            # 2. 準備新資料
+            updated_row = {'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no, 'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr, 'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l, 'nd2a_eff_date': nd2a_eff, 'nd2a_file_date': nd2a_file, 'nd2a_download': str(nd2a_dl), 'nd4_eff_date': nd4_eff, 'nd4_file_date': nd4_file, 'nd4_download': str(nd4_dl), 'dissolution_date': dis_date}
+            # 3. 合併並覆蓋整個 Table
+            final_df = pd.concat([df_filtered, pd.DataFrame([updated_row])], ignore_index=True)
+            final_df.to_sql('companies', engine, if_exists='replace', index=False)
             st.success("Updated!")
             st.rerun()
             
+        # --- DELETE 邏輯 ---
         if col_b2.button("🔥 DELETE RECORD"):
-            with engine.begin() as conn:
-                id_name = "id" if "id" in df_all.columns else "ID"
-                conn.execute(text(f'DELETE FROM companies WHERE "{id_name}" = :id'), {"id": target_id})
+            df_filtered = df_all[df_all['name_en'] != target_name]
+            df_filtered.to_sql('companies', engine, if_exists='replace', index=False)
             st.warning("Deleted!")
             st.rerun()
 
