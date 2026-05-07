@@ -33,11 +33,14 @@ if choice == "⚙️ Group Management":
         new_name = col_edit.text_input("New Name")
         if col_edit.button("Update"):
             with engine.begin() as conn:
-                conn.execute(text("UPDATE client_groups SET group_name=:n WHERE group_name=:t"), {"n": new_name, "t": target_g})
+                # 兼容處理 Group Name 更新
+                col_name = "group_name" if "group_name" in g_df.columns else "GROUP_NAME"
+                conn.execute(text(f'UPDATE client_groups SET "{col_name}"=:n WHERE "{col_name}"=:t'), {"n": new_name, "t": target_g})
             st.rerun()
         if col_del.button("⚠️ Delete Group"):
             with engine.begin() as conn:
-                conn.execute(text("DELETE FROM client_groups WHERE group_name=:t"), {"t": target_g})
+                col_name = "group_name" if "group_name" in g_df.columns else "GROUP_NAME"
+                conn.execute(text(f'DELETE FROM client_groups WHERE "{col_name}"=:t'), {"t": target_g})
             st.rerun()
 
 # --- 4. Company Register ---
@@ -50,11 +53,16 @@ elif choice == "🏢 Company Register":
     
     d = {'cg': "", 'en': "", 'ch': "", 'idate': None, 'place': "HK", 'p_oth': "", 'ci': "", 'br': "", 'type': "Private Company", 'ra': "", 'ca': "", 'rl': "", 'sl': "", 'cl': "", 'n2e': None, 'n2f': None, 'n2d': False, 'n4e': None, 'n4f': None, 'n4d': False, 'dis': None}
     target_id = None
+    id_col_name = "id" # 預設
 
     if mode == "✏️ Edit Existing" and not df_all.empty:
+        # 自動偵測 ID 欄位是大寫還是小寫
+        id_col_name = "id" if "id" in df_all.columns else "ID"
+        
         edit_target = st.selectbox("Select Company to Edit", df_all['name_en'].tolist())
         row = df_all[df_all['name_en'] == edit_target].iloc[0]
-        target_id = row['id'] if 'id' in row else row.get('ID', row.name)
+        target_id = row[id_col_name]
+        
         d = {
             'cg': row['client_group'], 'en': row['name_en'], 'ch': row['name_ch'], 'idate': row['incorp_date'],
             'place': row['incorp_place'], 'p_oth': row['incorp_place_others'], 'ci': row['ci_no'], 'br': row['br_no'],
@@ -82,68 +90,58 @@ elif choice == "🏢 Company Register":
     co_type = st.selectbox("Company Type", ["Private Company", "Public Company", "Company Limited by Guarantee"], index=["Private Company", "Public Company", "Company Limited by Guarantee"].index(d['type']))
     
     st.write("---")
-    st.markdown("### 📝 Company Secretary Appointment (ND2A)")
+    st.markdown("### 📝 ND2A Reminder")
     c1, c2, c3, c4 = st.columns([2, 2, 2, 1])
     nd2a_eff = c1.date_input("Effective Date (Appt)", value=d['n2e'], key="n2e")
     nd2a_file = c2.date_input("Filing Date (ND2A)", value=d['n2f'], key="n2f")
     if nd2a_eff:
-        c3.warning(f"Statutory Period: 15 days\n\n⚠️ Deadline: {nd2a_eff + timedelta(days=15)}")
-    else: c3.info("Statutory Period: 15 days")
+        c3.warning(f"Deadline: {nd2a_eff + timedelta(days=15)}")
     nd2a_dl = c4.checkbox("Downloaded", value=d['n2d'], key="n2d")
 
-    st.markdown("### 📝 Company Secretary Resignation (ND4)")
+    st.markdown("### 📝 ND4 Reminder")
     r1, r2, r3, r4 = st.columns([2, 2, 2, 1])
     nd4_eff = r1.date_input("Effective Date (Resign)", value=d['n4e'], key="n4e")
     nd4_file = r2.date_input("Filing Date (ND4)", value=d['n4f'], key="n4f")
     if nd4_eff:
-        r3.warning(f"Statutory Period: 15 days\n\n⚠️ Deadline: {nd4_eff + timedelta(days=15)}")
-    else: r3.info("Statutory Period: 15 days")
+        r3.warning(f"Deadline: {nd4_eff + timedelta(days=15)}")
     nd4_dl = r4.checkbox("Downloaded", value=d['n4d'], key="n4d")
 
     st.write("---")
-    st.markdown("### 📍 Address & Contact")
+    st.markdown("### 📍 Address & Seal")
     col_reg, col_cor = st.columns(2)
     reg_addr = col_reg.text_area("Registered Office Address", value=d['ra'])
     corres_addr = col_cor.text_area("Correspondence Address", value=d['ca'])
     
-    st.markdown("### 🗄️ Seal Storage") 
     l1, l2, l3 = st.columns(3)
-    round_l = l1.text_input("Round Chop Location", value=d['rl'])
-    sign_l = l2.text_input("Signature Chop Location", value=d['sl'])
-    common_l = l3.text_input("Common Seal Location", value=d['cl'])
+    round_l = l1.text_input("Round Chop", value=d['rl'])
+    sign_l = l2.text_input("Signature Chop", value=d['sl'])
+    common_l = l3.text_input("Common Seal", value=d['cl'])
     
     st.write("---")
-    dis_date = st.date_input("Company Dissolution Date", value=d['dis'])
+    dis_date = st.date_input("Dissolution Date", value=d['dis'])
     
-    # --- Buttons ---
     if mode == "🆕 Add New":
-        with st.popover("💾 Save To Records"):
-            if st.button("Yes, Confirm Save"):
-                new_data = {'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no, 'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr, 'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l, 'nd2a_eff_date': nd2a_eff, 'nd2a_file_date': nd2a_file, 'nd2a_download': str(nd2a_dl), 'nd4_eff_date': nd4_eff, 'nd4_file_date': nd4_file, 'nd4_download': str(nd4_dl), 'dissolution_date': dis_date}
-                pd.DataFrame([new_data]).to_sql('companies', engine, if_exists='append', index=False)
-                st.success("Saved!")
-                st.rerun()
+        if st.button("💾 Save To Cloud"):
+            new_data = {'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no, 'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr, 'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l, 'nd2a_eff_date': nd2a_eff, 'nd2a_file_date': nd2a_file, 'nd2a_download': str(nd2a_dl), 'nd4_eff_date': nd4_eff, 'nd4_file_date': nd4_file, 'nd4_download': str(nd4_dl), 'dissolution_date': dis_date}
+            pd.DataFrame([new_data]).to_sql('companies', engine, if_exists='append', index=False)
+            st.success("Saved!")
+            st.rerun()
     else:
-        b1, b2 = st.columns(2)
-        with b1.popover("🆙 Update Record"):
-            if st.button("Yes, Confirm Update"):
-                # 用 DataFrame 覆蓋法，唔使手寫 SQL 語句，徹底解決 ProgrammingError
-                with engine.begin() as conn:
-                    # 1. 刪除舊嗰筆資料
-                    conn.execute(text("DELETE FROM companies WHERE id = :id"), {"id": target_id})
-                    # 2. 準備新資料（保持原本 ID）
-                    updated_data = {'id': target_id, 'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no, 'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr, 'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l, 'nd2a_eff_date': nd2a_eff, 'nd2a_file_date': nd2a_file, 'nd2a_download': str(nd2a_dl), 'nd4_eff_date': nd4_eff, 'nd4_file_date': nd4_file, 'nd4_download': str(nd4_dl), 'dissolution_date': dis_date}
-                    # 3. 寫入新資料
-                    pd.DataFrame([updated_data]).to_sql('companies', engine, if_exists='append', index=False)
-                st.success("Updated Successfully!")
-                st.rerun()
-        
-        with b2.popover("🚨 DELETE RECORD"):
-            if st.button("🔥 YES, DELETE"):
-                with engine.begin() as conn:
-                    conn.execute(text("DELETE FROM companies WHERE id=:id"), {"id": target_id})
-                st.warning("Deleted.")
-                st.rerun()
+        col_b1, col_b2 = st.columns(2)
+        if col_b1.button("🆙 Update Record"):
+            # 使用 DataFrame 覆蓋法 + 自動偵測 ID 欄位名 (避免 ProgrammingError)
+            with engine.begin() as conn:
+                conn.execute(text(f'DELETE FROM companies WHERE "{id_col_name}" = :id'), {"id": target_id})
+                updated_data = {id_col_name: target_id, 'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no, 'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr, 'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l, 'nd2a_eff_date': nd2a_eff, 'nd2a_file_date': nd2a_file, 'nd2a_download': str(nd2a_dl), 'nd4_eff_date': nd4_eff, 'nd4_file_date': nd4_file, 'nd4_download': str(nd4_dl), 'dissolution_date': dis_date}
+                pd.DataFrame([updated_data]).to_sql('companies', engine, if_exists='append', index=False)
+            st.success("Updated!")
+            st.rerun()
+            
+        if col_b2.button("🔥 DELETE RECORD"):
+            with engine.begin() as conn:
+                conn.execute(text(f'DELETE FROM companies WHERE "{id_col_name}" = :id'), {"id": target_id})
+            st.warning("Deleted!")
+            st.rerun()
 
 # --- 5. Dashboard ---
 elif choice == "📊 Dashboard":
