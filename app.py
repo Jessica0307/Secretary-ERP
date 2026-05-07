@@ -3,15 +3,15 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 from datetime import datetime, timedelta
 
-# --- 1. 雲端 Database 連線 ---
+# --- 1. Database Connection ---
 try:
     DB_URL = st.secrets["DB_URL"]
     engine = create_engine(DB_URL)
 except:
-    st.error("❌ 請在 Streamlit Secrets 填寫正確的 DB_URL")
+    st.error("❌ Please check DB_URL in Secrets")
     st.stop()
 
-# --- 2. Navigation (跟返 V34) ---
+# --- 2. Navigation (LOCK V34) ---
 st.set_page_config(page_title="ERP Cloud V34", layout="wide")
 choice = st.sidebar.radio("Navigation", ["📊 Dashboard", "🏢 Company Register", "⚙️ Group Management"])
 
@@ -40,16 +40,14 @@ if choice == "⚙️ Group Management":
                 conn.execute(text("DELETE FROM client_groups WHERE group_name=:t"), {"t": target_g})
             st.rerun()
 
-# --- 4. Company Register (排版鎖定 + 精準欄位對齊) ---
+# --- 4. Company Register (排版絕對還原) ---
 elif choice == "🏢 Company Register":
     st.header("🏢 Company Records Management")
-    
     mode = st.radio("Mode", ["🆕 Add New", "✏️ Edit Existing"], horizontal=True)
     
     df_all = pd.read_sql("SELECT * FROM companies", engine)
     groups = pd.read_sql("SELECT group_name FROM client_groups", engine)['group_name'].tolist()
     
-    # 預設值 (對齊 V34 欄位名)
     d = {'cg': "", 'en': "", 'ch': "", 'idate': None, 'place': "HK", 'p_oth': "", 'ci': "", 'br': "", 'type': "Private Company", 'ra': "", 'ca': "", 'rl': "", 'sl': "", 'cl': "", 'n2e': None, 'n2f': None, 'n2d': False, 'n4e': None, 'n4f': None, 'n4d': False, 'dis': None}
     target_id = None
 
@@ -57,8 +55,6 @@ elif choice == "🏢 Company Register":
         edit_target = st.selectbox("Select Company to Edit", df_all['name_en'].tolist())
         row = df_all[df_all['name_en'] == edit_target].iloc[0]
         target_id = row['id'] if 'id' in row else row.get('ID', row.name)
-        
-        # 精準對應 V34 代碼內定義的 Database Column 名稱
         d = {
             'cg': row['client_group'], 'en': row['name_en'], 'ch': row['name_ch'], 'idate': row['incorp_date'],
             'place': row['incorp_place'], 'p_oth': row['incorp_place_others'], 'ci': row['ci_no'], 'br': row['br_no'],
@@ -121,51 +117,22 @@ elif choice == "🏢 Company Register":
     
     if mode == "🆕 Add New":
         with st.popover("💾 Save To Records"):
-            st.write("Confirm adding this new company?")
             if st.button("Yes, Confirm Save"):
-                # 呢度係根據 V34 INSERT 邏輯寫嘅
-                new_data = {
-                    'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date,
-                    'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no,
-                    'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr,
-                    'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l,
-                    'nd2a_eff_date': nd2a_eff, 'nd2a_file_date': nd2a_file, 'nd2a_download': str(nd2a_dl),
-                    'nd4_eff_date': nd4_eff, 'nd4_file_date': nd4_file, 'nd4_download': str(nd4_dl),
-                    'dissolution_date': dis_date
-                }
+                new_data = {'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no, 'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr, 'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l, 'nd2a_eff_date': nd2a_eff, 'nd2a_file_date': nd2a_file, 'nd2a_download': str(nd2a_dl), 'nd4_eff_date': nd4_eff, 'nd4_file_date': nd4_file, 'nd4_download': str(nd4_dl), 'dissolution_date': dis_date}
                 pd.DataFrame([new_data]).to_sql('companies', engine, if_exists='append', index=False)
                 st.success("Saved!")
                 st.rerun()
     else:
         b_col1, b_col2 = st.columns(2)
         with b_col1.popover("🆙 Update Record"):
-            st.write("Confirm update existing record?")
             if st.button("Yes, Confirm Update"):
                 with engine.begin() as conn:
-                    # 呢度我逐個欄位對返 V34 嘅表格結構
-                    sql = text("""
-                        UPDATE companies SET 
-                        client_group=:cg, name_en=:en, name_ch=:ch, incorp_date=:idate, 
-                        incorp_place=:place, incorp_place_others=:p_oth, ci_no=:ci, br_no=:br, 
-                        co_type=:type, reg_addr=:ra, corres_addr=:ca, round_loc=:rl, 
-                        sign_loc=:sl, seal_loc=:cl, nd2a_eff_date=:n2e, nd2a_file_date=:n2f, 
-                        nd2a_download=:n2d, nd4_eff_date=:n4e, nd4_file_date=:n4f, 
-                        nd4_download=:n4d, dissolution_date=:dis 
-                        WHERE id=:id
-                    """)
-                    conn.execute(sql, {
-                        "cg": client_group, "en": name_en, "ch": name_ch, "idate": inc_date, 
-                        "place": inc_place, "p_oth": place_others, "ci": ci_no, "br": br_no, 
-                        "type": co_type, "ra": reg_addr, "ca": corres_addr, "rl": round_l, 
-                        "sl": sign_l, "cl": common_l, "n2e": nd2a_eff, "n2f": nd2a_file, 
-                        "n2d": str(nd2a_dl), "n4e": nd4_eff, "n4f": nd4_file, "n4d": str(nd4_dl), 
-                        "dis": dis_date, "id": target_id
-                    })
+                    # 重新編寫 SQL 確保欄位名淨化無誤
+                    sql = text("UPDATE companies SET client_group=:cg, name_en=:en, name_ch=:ch, incorp_date=:idate, incorp_place=:place, incorp_place_others=:p_oth, ci_no=:ci, br_no=:br, co_type=:type, reg_addr=:ra, corres_addr=:ca, round_loc=:rl, sign_loc=:sl, seal_loc=:cl, nd2a_eff_date=:n2e, nd2a_file_date=:n2f, nd2a_download=:n2d, nd4_eff_date=:n4e, nd4_file_date=:n4f, nd4_download=:n4d, dissolution_date=:dis WHERE id=:id")
+                    conn.execute(sql, {"cg": client_group, "en": name_en, "ch": name_ch, "idate": inc_date, "place": inc_place, "p_oth": place_others, "ci": ci_no, "br": br_no, "type": co_type, "ra": reg_addr, "ca": corres_addr, "rl": round_l, "sl": sign_l, "cl": common_l, "n2e": nd2a_eff, "n2f": nd2a_file, "n2d": str(nd2a_dl), "n4e": nd4_eff, "n4f": nd4_file, "n4d": str(nd4_dl), "dis": dis_date, "id": target_id})
                 st.success("Updated!")
                 st.rerun()
-        
         with b_col2.popover("🚨 DELETE RECORD"):
-            st.markdown("### ⚠️ DANGER ZONE")
             st.error(f"DELETE: {name_en}?")
             if st.button("🔥 YES, DELETE FOREVER"):
                 with engine.begin() as conn:
