@@ -40,7 +40,7 @@ if choice == "⚙️ Group Management":
                 conn.execute(text("DELETE FROM client_groups WHERE group_name=:t"), {"t": target_g})
             st.rerun()
 
-# --- 4. Company Register ---
+# --- 4. Company Register (排版鎖定) ---
 elif choice == "🏢 Company Register":
     st.header("🏢 Company Records Management")
     mode = st.radio("Mode", ["🆕 Add New", "✏️ Edit Existing"], horizontal=True)
@@ -48,13 +48,14 @@ elif choice == "🏢 Company Register":
     df_all = pd.read_sql("SELECT * FROM companies", engine)
     groups = pd.read_sql("SELECT group_name FROM client_groups", engine)['group_name'].tolist()
     
+    # 預設值 (對應 V34 表格結構)
     d = {'cg': "", 'en': "", 'ch': "", 'idate': None, 'place': "HK", 'p_oth': "", 'ci': "", 'br': "", 'type': "Private Company", 'ra': "", 'ca': "", 'rl': "", 'sl': "", 'cl': "", 'n2e': None, 'n2f': None, 'n2d': False, 'n4e': None, 'n4f': None, 'n4d': False, 'dis': None}
     target_id = None
 
     if mode == "✏️ Edit Existing" and not df_all.empty:
         edit_target = st.selectbox("Select Company to Edit", df_all['name_en'].tolist())
         row = df_all[df_all['name_en'] == edit_target].iloc[0]
-        # PostgreSQL ID 處理
+        # 處理 PostgreSQL 欄位名大小寫
         target_id = row['id'] if 'id' in row else row.get('ID', row.name)
         d = {
             'cg': row['client_group'], 'en': row['name_en'], 'ch': row['name_ch'], 'idate': row['incorp_date'],
@@ -116,11 +117,9 @@ elif choice == "🏢 Company Register":
     st.write("---")
     dis_date = st.date_input("Company Dissolution Date", value=d['dis'])
     
-    # --- Buttons ---
     if mode == "🆕 Add New":
         with st.popover("💾 Save To Records"):
             if st.button("Yes, Confirm Save"):
-                # Use standard DataFrame to_sql for addition
                 new_data = {'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no, 'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr, 'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l, 'nd2a_eff_date': nd2a_eff, 'nd2a_file_date': nd2a_file, 'nd2a_download': str(nd2a_dl), 'nd4_eff_date': nd4_eff, 'nd4_file_date': nd4_file, 'nd4_download': str(nd4_dl), 'dissolution_date': dis_date}
                 pd.DataFrame([new_data]).to_sql('companies', engine, if_exists='append', index=False)
                 st.success("Saved!")
@@ -130,7 +129,7 @@ elif choice == "🏢 Company Register":
         with b1.popover("🆙 Update Record"):
             if st.button("Yes, Confirm Update"):
                 with engine.begin() as conn:
-                    # Final correction: 21 Columns mapped 100% to V34 INSERT order
+                    # 呢度 100% 對齊你 V34 原始代碼 INSERT 段落嘅 21 個欄位名
                     sql = text("""
                         UPDATE companies SET 
                         client_group=:cg, name_en=:en, name_ch=:ch, incorp_date=:idate, 
