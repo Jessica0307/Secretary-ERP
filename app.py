@@ -3,7 +3,7 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 from datetime import datetime, timedelta
 
-# --- 1. 雲端 Database 連線 (保持固定) ---
+# --- 1. 雲端 Database 連線 ---
 try:
     DB_URL = st.secrets["DB_URL"]
     engine = create_engine(DB_URL)
@@ -11,7 +11,7 @@ except:
     st.error("❌ 請在 Streamlit Secrets 填寫正確的 DB_URL")
     st.stop()
 
-# --- 2. Navigation (保持 V34 絕對鎖定) ---
+# --- 2. Navigation (跟返 V34) ---
 st.set_page_config(page_title="ERP Cloud V34", layout="wide")
 choice = st.sidebar.radio("Navigation", ["📊 Dashboard", "🏢 Company Register", "⚙️ Group Management"])
 
@@ -40,7 +40,7 @@ if choice == "⚙️ Group Management":
                 conn.execute(text("DELETE FROM client_groups WHERE group_name=:t"), {"t": target_g})
             st.rerun()
 
-# --- 4. Company Register (排版絕對鎖定 + 強烈確認機制) ---
+# --- 4. Company Register (排版鎖定 + 確認機制) ---
 elif choice == "🏢 Company Register":
     st.header("🏢 Company Records Management")
     
@@ -49,25 +49,22 @@ elif choice == "🏢 Company Register":
     df_all = pd.read_sql("SELECT * FROM companies", engine)
     groups = pd.read_sql("SELECT group_name FROM client_groups", engine)['group_name'].tolist()
     
-    # 初始化 V34 欄位預設值
+    # 預設值 (全欄位鎖定)
     d = {'cg': "", 'en': "", 'ch': "", 'idate': None, 'place': "HK", 'p_oth': "", 'ci': "", 'br': "", 'type': "Private Company", 'ra': "", 'ca': "", 'rl': "", 'sl': "", 'cl': "", 'n2e': None, 'n2f': None, 'n2d': False, 'n4e': None, 'n4f': None, 'n4d': False, 'dis': None}
     target_id = None
 
     if mode == "✏️ Edit Existing" and not df_all.empty:
         edit_target = st.selectbox("Select Company to Edit", df_all['name_en'].tolist())
         row = df_all[df_all['name_en'] == edit_target].iloc[0]
-        # 修正 ID 獲取方式
         target_id = row['id'] if 'id' in row else row.get('ID', row.name)
         
-        # 對應 V34 原始欄位名
         d = {
-            'cg': row['client_group'], 'en': row['name_en'], 'ch': row['name_ch'], 
-            'idate': row['incorp_date'], 'place': row['incorp_place'], 'p_oth': row['incorp_place_others'], 
-            'ci': row['ci_no'], 'br': row['br_no'], 'type': row['co_type'], 
-            'ra': row['reg_addr'], 'ca': row['corres_addr'], 
-            'rl': row.get('round_loc', ""), 'sl': row.get('sign_loc', ""), 'cl': row.get('seal_loc', ""), 
-            'n2e': row['nd2a_eff_date'], 'n2f': row['nd2a_file_date'], 'n2d': str(row['nd2a_download']) == 'True', 
-            'n4e': row['nd4_eff_date'], 'n4f': row['nd4_file_date'], 'n4d': str(row['nd4_download']) == 'True', 
+            'cg': row['client_group'], 'en': row['name_en'], 'ch': row['name_ch'], 'idate': row['incorp_date'],
+            'place': row['incorp_place'], 'p_oth': row['incorp_place_others'], 'ci': row['ci_no'], 'br': row['br_no'],
+            'type': row['co_type'], 'ra': row['reg_addr'], 'ca': row['corres_addr'],
+            'rl': row['round_loc'], 'sl': row['sign_loc'], 'cl': row['seal_loc'],
+            'n2e': row['nd2a_eff_date'], 'n2f': row['nd2a_file_date'], 'n2d': str(row['nd2a_download']) == 'True',
+            'n4e': row['nd4_eff_date'], 'n4f': row['nd4_file_date'], 'n4d': str(row['nd4_download']) == 'True',
             'dis': row['dissolution_date']
         }
 
@@ -126,12 +123,12 @@ elif choice == "🏢 Company Register":
             st.write("Confirm adding this new company?")
             if st.button("Yes, Confirm Save"):
                 new_data = {
-                    'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 
-                    'incorp_date': inc_date, 'incorp_place': inc_place, 'incorp_place_others': place_others, 
-                    'ci_no': ci_no, 'br_no': br_no, 'co_type': co_type, 'reg_addr': reg_addr, 
-                    'corres_addr': corres_addr, 'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l, 
-                    'nd2a_eff_date': nd2a_eff, 'nd2a_file_date': nd2a_file, 'nd2a_download': str(nd2a_dl), 
-                    'nd4_eff_date': nd4_eff, 'nd4_file_date': nd4_file, 'nd4_download': str(nd4_dl), 
+                    'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date,
+                    'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no,
+                    'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr,
+                    'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l,
+                    'nd2a_eff_date': nd2a_eff, 'nd2a_file_date': nd2a_file, 'nd2a_download': str(nd2a_dl),
+                    'nd4_eff_date': nd4_eff, 'nd4_file_date': nd4_file, 'nd4_download': str(nd4_dl),
                     'dissolution_date': dis_date
                 }
                 pd.DataFrame([new_data]).to_sql('companies', engine, if_exists='append', index=False)
@@ -143,7 +140,6 @@ elif choice == "🏢 Company Register":
             st.write("Confirm update existing record?")
             if st.button("Yes, Confirm Update"):
                 with engine.begin() as conn:
-                    # 修正 SQL 欄位名與參數對應，解決 ProgrammingError
                     sql = text("""
                         UPDATE companies SET 
                         client_group=:cg, name_en=:en, name_ch=:ch, incorp_date=:idate, 
