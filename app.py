@@ -48,15 +48,15 @@ if choice == "⚙️ Group Management":
         new_name = col_edit.text_input("New Name")
         if col_edit.button("Update"):
             with engine.begin() as conn:
-                conn.execute(text("UPDATE client_groups SET group_name=:n WHERE group_name=:t"), {"n": new_name, "t": target_g})
-                conn.execute(text("UPDATE companies SET client_group=:n WHERE client_group=:t"), {"n": new_name, "t": target_g})
+                conn.execute(text('UPDATE client_groups SET group_name=:n WHERE group_name=:t'), {"n": new_name, "t": target_g})
+                conn.execute(text('UPDATE companies SET client_group=:n WHERE client_group=:t'), {"n": new_name, "t": target_g})
             st.rerun()
         if col_del.button("⚠️ Delete"):
             with engine.begin() as conn:
-                conn.execute(text("DELETE FROM client_groups WHERE group_name=:t"), {"t": target_g})
+                conn.execute(text('DELETE FROM client_groups WHERE group_name=:t'), {"t": target_g})
             st.rerun()
 
-# --- 4. Company Register (排版絕對鎖定 + 新增 Delete 功能) ---
+# --- 4. Company Register (排版絕對鎖定 + 修正 Delete 語法) ---
 elif choice == "🏢 Company Register":
     st.header("🏢 Company Records Management")
     
@@ -72,9 +72,10 @@ elif choice == "🏢 Company Register":
         edit_target = st.selectbox("Select Company to Edit", df_all['name_en'].tolist())
         row = df_all[df_all['name_en'] == edit_target].iloc[0]
         
-        if 'id' in row: target_id = row['id']
-        elif 'ID' in row: target_id = row['ID']
-        else: target_id = row.name 
+        # 兼容處理 ID
+        if 'id' in row: target_id = int(row['id'])
+        elif 'ID' in row: target_id = int(row['ID'])
+        else: target_id = int(row.name)
         
         d = {'cg': row['client_group'], 'en': row['name_en'], 'ch': row['name_ch'], 'idate': row['incorp_date'], 'place': row['incorp_place'], 'p_oth': row['incorp_place_others'], 'ci': row['ci_no'], 'br': row['br_no'], 'type': row['co_type'], 'ra': row['reg_addr'], 'ca': row['corres_addr'], 'rl': row['round_loc'], 'sl': row['sign_loc'], 'cl': row['seal_loc'], 'n2e': row['nd2a_eff_date'], 'n2f': row['nd2a_file_date'], 'n2d': str(row['nd2a_download']) == 'True', 'n4e': row['nd4_eff_date'], 'n4f': row['nd4_file_date'], 'n4d': str(row['nd4_download']) == 'True', 'dis': row['dissolution_date']}
 
@@ -137,7 +138,6 @@ elif choice == "🏢 Company Register":
             st.success("Saved!")
             st.rerun()
     else:
-        # Edit 模式下的按鈕區 (排版跟返 Group Management)
         b_col1, b_col2 = st.columns(2)
         if b_col1.button("Update Record"):
             with engine.begin() as conn:
@@ -156,10 +156,11 @@ elif choice == "🏢 Company Register":
             st.success("Updated!")
             st.rerun()
         
-        # ⚠️ 新增 Delete 功能，方便你清理重複資料
+        # 修正後的 Delete 語法，處理 PostgreSQL 大細寫問題
         if b_col2.button("⚠️ Delete Record"):
             with engine.begin() as conn:
-                conn.execute(text("DELETE FROM companies WHERE id=:id"), {"id": target_id})
+                # 這裡使用雙引號 "id" 來確保 PostgreSQL 認得細寫欄位
+                conn.execute(text('DELETE FROM companies WHERE id = :id_val'), {"id_val": target_id})
                 conn.execute(text("INSERT INTO audit_logs (company_name, action, change_details) VALUES (:n, 'DELETE', 'Company Removed')"), {"n": name_en})
             st.warning("Company Deleted!")
             st.rerun()
