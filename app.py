@@ -3,7 +3,7 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 from datetime import datetime, timedelta
 
-# --- 1. 雲端 Database 連線 ---
+# --- 1. 雲端 Database 連線 (固定) ---
 try:
     DB_URL = st.secrets["DB_URL"]
     engine = create_engine(DB_URL)
@@ -11,7 +11,7 @@ except:
     st.error("❌ 請在 Streamlit Secrets 填寫正確的 DB_URL")
     st.stop()
 
-# 確保雲端 Table 結構 (保持 V34 欄位一字不差)
+# 確保雲端 Table 結構
 with engine.begin() as conn:
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS companies (
@@ -56,17 +56,15 @@ if choice == "⚙️ Group Management":
                 conn.execute(text("DELETE FROM client_groups WHERE group_name=:t"), {"t": target_g})
             st.rerun()
 
-# --- 4. Company Register (排版絕對鎖定 + 修正 KeyError) ---
+# --- 4. Company Register (排版絕對鎖定 + 新增 Delete 功能) ---
 elif choice == "🏢 Company Register":
     st.header("🏢 Company Records Management")
     
     mode = st.radio("Mode", ["🆕 Add New", "✏️ Edit Existing"], horizontal=True)
     
-    # 攞資料時將欄位名統一處理
     df_all = pd.read_sql("SELECT * FROM companies", engine)
     groups = pd.read_sql("SELECT group_name FROM client_groups", engine)['group_name'].tolist()
     
-    # 初始化預設值
     d = {'cg': "", 'en': "", 'ch': "", 'idate': None, 'place': "HK", 'p_oth': "", 'ci': "", 'br': "", 'type': "Private Company", 'ra': "", 'ca': "", 'rl': "", 'sl': "", 'cl': "", 'n2e': None, 'n2f': None, 'n2d': False, 'n4e': None, 'n4f': None, 'n4d': False, 'dis': None}
     target_id = None
 
@@ -74,7 +72,6 @@ elif choice == "🏢 Company Register":
         edit_target = st.selectbox("Select Company to Edit", df_all['name_en'].tolist())
         row = df_all[df_all['name_en'] == edit_target].iloc[0]
         
-        # 【修正位：兼容大細寫 id】
         if 'id' in row: target_id = row['id']
         elif 'ID' in row: target_id = row['ID']
         else: target_id = row.name 
@@ -138,8 +135,11 @@ elif choice == "🏢 Company Register":
             new_data = {'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no, 'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr, 'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l, 'nd2a_eff_date': nd2a_eff, 'nd2a_file_date': nd2a_file, 'nd2a_download': str(nd2a_dl), 'nd4_eff_date': nd4_eff, 'nd4_file_date': nd4_file, 'nd4_download': str(nd4_dl), 'dissolution_date': dis_date}
             pd.DataFrame([new_data]).to_sql('companies', engine, if_exists='append', index=False)
             st.success("Saved!")
+            st.rerun()
     else:
-        if st.button("Update Record"):
+        # Edit 模式下的按鈕區 (排版跟返 Group Management)
+        b_col1, b_col2 = st.columns(2)
+        if b_col1.button("Update Record"):
             with engine.begin() as conn:
                 sql = text("""
                     UPDATE companies SET 
@@ -154,6 +154,14 @@ elif choice == "🏢 Company Register":
                 conn.execute(sql, {"cg": client_group, "en": name_en, "ch": name_ch, "idate": inc_date, "place": inc_place, "p_oth": place_others, "ci": ci_no, "br": br_no, "type": co_type, "ra": reg_addr, "ca": corres_addr, "rl": round_l, "sl": sign_l, "cl": common_l, "n2e": nd2a_eff, "n2f": nd2a_file, "n2d": str(nd2a_dl), "n4e": nd4_eff, "n4f": nd4_file, "n4d": str(nd4_dl), "dis": dis_date, "id": target_id})
                 conn.execute(text("INSERT INTO audit_logs (company_name, action, change_details) VALUES (:n, 'UPDATE', 'Manual Update')"), {"n": name_en})
             st.success("Updated!")
+            st.rerun()
+        
+        # ⚠️ 新增 Delete 功能，方便你清理重複資料
+        if b_col2.button("⚠️ Delete Record"):
+            with engine.begin() as conn:
+                conn.execute(text("DELETE FROM companies WHERE id=:id"), {"id": target_id})
+                conn.execute(text("INSERT INTO audit_logs (company_name, action, change_details) VALUES (:n, 'DELETE', 'Company Removed')"), {"n": name_en})
+            st.warning("Company Deleted!")
             st.rerun()
 
 # --- 5. Dashboard ---
