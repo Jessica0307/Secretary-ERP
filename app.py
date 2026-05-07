@@ -11,7 +11,7 @@ except:
     st.error("❌ 請在 Secrets 填寫 DB_URL")
     st.stop()
 
-# 初始化資料庫表格 (加入紀錄表)
+# 初始化變更紀錄表 (只會喺第一次執行時建立)
 with engine.begin() as conn:
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS audit_logs (
@@ -23,7 +23,7 @@ with engine.begin() as conn:
         )
     """))
 
-st.set_page_config(page_title="Secretarial ERP V34", layout="wide")
+st.set_page_config(page_title="Secretarial System V34", layout="wide")
 st.sidebar.title("管理選單")
 choice = st.sidebar.radio("Navigation", ["📊 Dashboard", "🏢 Company Register", "⚙️ Group Management"])
 
@@ -55,8 +55,8 @@ if choice == "🏢 Company Register":
     name_ch = col2.text_input("Company Chinese Name", value=default_data['ch'])
     
     col3, col4 = st.columns(2)
-    # 【手打日期】直接輸入 2024-01-01 即可
-    inc_date = col3.date_input("Date of Incorporation (可直接鍵盤打字)", value=default_data['date'])
+    # 還原：唔再加多餘提示，跟返標準 Date Input
+    inc_date = col3.date_input("Date of Incorporation", value=default_data['date'])
     
     place_list = ["HK", "BVI", "Cayman Island", "Others"]
     inc_place = col4.selectbox("Place of Incorporation", place_list, index=place_list.index(default_data['place']))
@@ -69,39 +69,40 @@ if choice == "🏢 Company Register":
     br_no = col_br.text_input("BR Number", value=default_data['br'])
 
     if mode == "🆕 新增公司":
-        if st.button("💾 儲存到雲端"):
+        if st.button("💾 儲存資料"):
             new_data = {'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no}
             pd.DataFrame([new_data]).to_sql('companies', engine, if_exists='append', index=False)
             st.success("儲存成功")
             st.rerun()
     else:
-        if st.button("🆙 更新並紀錄"):
-            # 準備變更描述 (比對舊資料)
+        if st.button("🆙 更新資料"):
+            # 紀錄變更
             changes = []
-            if name_en != default_data['en']: changes.append(f"EN Name: {default_data['en']} -> {name_en}")
+            if name_en != default_data['en']: changes.append(f"EN: {default_data['en']} -> {name_en}")
             if ci_no != default_data['ci']: changes.append(f"CI: {default_data['ci']} -> {ci_no}")
-            # ... 其他比對可類推
             
             with engine.begin() as conn:
-                # 更新資料
                 conn.execute(text("UPDATE companies SET client_group=:cg, name_en=:en, name_ch=:ch, incorp_date=:dt, incorp_place=:pl, incorp_place_others=:oth, ci_no=:ci, br_no=:br WHERE id=:id"),
                     {"cg": client_group, "en": name_en, "ch": name_ch, "dt": inc_date, "pl": inc_place, "oth": place_others, "ci": ci_no, "br": br_no, "id": target_id})
-                # 寫入紀錄
                 conn.execute(text("INSERT INTO audit_logs (company_name, action, change_details) VALUES (:name, 'UPDATE', :detail)"),
-                    {"name": name_en, "detail": ", ".join(changes) if changes else "手動更新資料"})
-            st.success("更新完成並已紀錄歷史！")
+                    {"name": name_en, "detail": ", ".join(changes) if changes else "資料更新"})
+            st.success("更新完成")
             st.rerun()
 
 elif choice == "📊 Dashboard":
     st.header("📊 Master Dashboard")
-    st.subheader("🏢 現有公司清單")
+    st.subheader("🏢 公司清單")
     st.dataframe(pd.read_sql("SELECT * FROM companies", engine), use_container_width=True)
     
     st.write("---")
-    st.subheader("🕒 最近修改紀錄 (Audit Log)")
+    st.subheader("🕒 修改紀錄")
     log_df = pd.read_sql("SELECT company_name, action, change_details, changed_at FROM audit_logs ORDER BY changed_at DESC", engine)
-    st.table(log_df) # 用 Table 睇得更清楚
+    st.table(log_df)
 
 elif choice == "⚙️ Group Management":
     st.header("⚙️ Group Management")
-    # ... (保留原本新增 Group 代碼)
+    new_g = st.text_input("New Group Name")
+    if st.button("Add"):
+        pd.DataFrame([{'group_name': new_g}]).to_sql('client_groups', engine, if_exists='append', index=False)
+        st.success("Success")
+        st.rerun()
