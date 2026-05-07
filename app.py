@@ -140,7 +140,6 @@ elif choice == "🏢 Company Register":
         b_col1, b_col2 = st.columns(2)
         if b_col1.button("Update Record"):
             with engine.begin() as conn:
-                # 使用雙引號強制對應 PostgreSQL 欄位
                 sql = text("""
                     UPDATE companies SET 
                     client_group=:cg, name_en=:en, name_ch=:ch, incorp_date=:idate, 
@@ -156,5 +155,21 @@ elif choice == "🏢 Company Register":
             st.success("Updated!")
             st.rerun()
         
-        # 修正後的刪除指令
-        if b_col2.button("⚠️ Delete Record
+        # 修正後的刪除按鈕 (已修正引號問題)
+        if b_col2.button("⚠️ Delete Record"):
+            with engine.begin() as conn:
+                conn.execute(text('DELETE FROM companies WHERE "id" = :id_val'), {"id_val": target_id})
+                conn.execute(text("INSERT INTO audit_logs (company_name, action, change_details) VALUES (:n, 'DELETE', 'Company Removed')"), {"n": name_en})
+            st.warning("Company Deleted!")
+            st.rerun()
+
+# --- 5. Dashboard ---
+elif choice == "📊 Dashboard":
+    st.header("📊 Compliance Overview")
+    df = pd.read_sql("SELECT * FROM companies", engine)
+    st.dataframe(df, use_container_width=True)
+    
+    st.write("---")
+    st.subheader("🕒 Audit Logs")
+    logs = pd.read_sql("SELECT * FROM audit_logs ORDER BY changed_at DESC", engine)
+    st.table(logs)
