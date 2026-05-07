@@ -33,14 +33,14 @@ if choice == "⚙️ Group Management":
         new_name = col_edit.text_input("New Name")
         if col_edit.button("Update"):
             with engine.begin() as conn:
-                # 兼容處理 Group Name 更新
-                col_name = "group_name" if "group_name" in g_df.columns else "GROUP_NAME"
-                conn.execute(text(f'UPDATE client_groups SET "{col_name}"=:n WHERE "{col_name}"=:t'), {"n": new_name, "t": target_g})
+                # 兼容處理：無論欄位名是大寫還是細寫
+                c_name = "group_name" if "group_name" in g_df.columns else "GROUP_NAME"
+                conn.execute(text(f'UPDATE client_groups SET "{c_name}"=:n WHERE "{c_name}"=:t'), {"n": new_name, "t": target_g})
             st.rerun()
         if col_del.button("⚠️ Delete Group"):
             with engine.begin() as conn:
-                col_name = "group_name" if "group_name" in g_df.columns else "GROUP_NAME"
-                conn.execute(text(f'DELETE FROM client_groups WHERE "{col_name}"=:t'), {"t": target_g})
+                c_name = "group_name" if "group_name" in g_df.columns else "GROUP_NAME"
+                conn.execute(text(f'DELETE FROM client_groups WHERE "{c_name}"=:t'), {"t": target_g})
             st.rerun()
 
 # --- 4. Company Register ---
@@ -51,26 +51,28 @@ elif choice == "🏢 Company Register":
     df_all = pd.read_sql("SELECT * FROM companies", engine)
     groups = pd.read_sql("SELECT group_name FROM client_groups", engine)['group_name'].tolist()
     
+    # 預設值
     d = {'cg': "", 'en': "", 'ch': "", 'idate': None, 'place': "HK", 'p_oth': "", 'ci': "", 'br': "", 'type': "Private Company", 'ra': "", 'ca': "", 'rl': "", 'sl': "", 'cl': "", 'n2e': None, 'n2f': None, 'n2d': False, 'n4e': None, 'n4f': None, 'n4d': False, 'dis': None}
     target_id = None
-    id_col_name = "id" # 預設
 
     if mode == "✏️ Edit Existing" and not df_all.empty:
-        # 自動偵測 ID 欄位是大寫還是小寫
-        id_col_name = "id" if "id" in df_all.columns else "ID"
-        
         edit_target = st.selectbox("Select Company to Edit", df_all['name_en'].tolist())
         row = df_all[df_all['name_en'] == edit_target].iloc[0]
-        target_id = row[id_col_name]
+        
+        # 【修正 KeyError 核心位】：嘗試多種方式獲取 ID
+        target_id = row.get('id', row.get('ID', row.name))
         
         d = {
-            'cg': row['client_group'], 'en': row['name_en'], 'ch': row['name_ch'], 'idate': row['incorp_date'],
-            'place': row['incorp_place'], 'p_oth': row['incorp_place_others'], 'ci': row['ci_no'], 'br': row['br_no'],
-            'type': row['co_type'], 'ra': row['reg_addr'], 'ca': row['corres_addr'],
-            'rl': row['round_loc'], 'sl': row['sign_loc'], 'cl': row['seal_loc'],
-            'n2e': row['nd2a_eff_date'], 'n2f': row['nd2a_file_date'], 'n2d': str(row['nd2a_download']) == 'True',
-            'n4e': row['nd4_eff_date'], 'n4f': row['nd4_file_date'], 'n4d': str(row['nd4_download']) == 'True',
-            'dis': row['dissolution_date']
+            'cg': row.get('client_group', ""), 'en': row.get('name_en', ""), 'ch': row.get('name_ch', ""), 
+            'idate': row.get('incorp_date'), 'place': row.get('incorp_place', "HK"), 
+            'p_oth': row.get('incorp_place_others', ""), 'ci': row.get('ci_no', ""), 'br': row.get('br_no', ""), 
+            'type': row.get('co_type', "Private Company"), 'ra': row.get('reg_addr', ""), 'ca': row.get('corres_addr', ""),
+            'rl': row.get('round_loc', ""), 'sl': row.get('sign_loc', ""), 'cl': row.get('seal_loc', ""),
+            'n2e': row.get('nd2a_eff_date'), 'n2f': row.get('nd2a_file_date'), 
+            'n2d': str(row.get('nd2a_download', "")) == 'True',
+            'n4e': row.get('nd4_eff_date'), 'n4f': row.get('nd4_file_date'), 
+            'n4d': str(row.get('nd4_download', "")) == 'True',
+            'dis': row.get('dissolution_date')
         }
 
     st.markdown("### General Information")
@@ -129,17 +131,20 @@ elif choice == "🏢 Company Register":
     else:
         col_b1, col_b2 = st.columns(2)
         if col_b1.button("🆙 Update Record"):
-            # 使用 DataFrame 覆蓋法 + 自動偵測 ID 欄位名 (避免 ProgrammingError)
             with engine.begin() as conn:
-                conn.execute(text(f'DELETE FROM companies WHERE "{id_col_name}" = :id'), {"id": target_id})
-                updated_data = {id_col_name: target_id, 'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no, 'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr, 'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l, 'nd2a_eff_date': nd2a_eff, 'nd2a_file_date': nd2a_file, 'nd2a_download': str(nd2a_dl), 'nd4_eff_date': nd4_eff, 'nd4_file_date': nd4_file, 'nd4_download': str(nd4_dl), 'dissolution_date': dis_date}
+                # 嘗試偵測真正的 ID 欄位名
+                id_name = "id" if "id" in df_all.columns else "ID"
+                # 先刪除舊的，再新增新的 (避免手寫複雜的 Update SQL 報錯)
+                conn.execute(text(f'DELETE FROM companies WHERE "{id_name}" = :id'), {"id": target_id})
+                updated_data = {id_name: target_id, 'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no, 'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr, 'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l, 'nd2a_eff_date': nd2a_eff, 'nd2a_file_date': nd2a_file, 'nd2a_download': str(nd2a_dl), 'nd4_eff_date': nd4_eff, 'nd4_file_date': nd4_file, 'nd4_download': str(nd4_dl), 'dissolution_date': dis_date}
                 pd.DataFrame([updated_data]).to_sql('companies', engine, if_exists='append', index=False)
             st.success("Updated!")
             st.rerun()
             
         if col_b2.button("🔥 DELETE RECORD"):
             with engine.begin() as conn:
-                conn.execute(text(f'DELETE FROM companies WHERE "{id_col_name}" = :id'), {"id": target_id})
+                id_name = "id" if "id" in df_all.columns else "ID"
+                conn.execute(text(f'DELETE FROM companies WHERE "{id_name}" = :id'), {"id": target_id})
             st.warning("Deleted!")
             st.rerun()
 
