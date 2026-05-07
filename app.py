@@ -56,7 +56,7 @@ if choice == "⚙️ Group Management":
                 conn.execute(text('DELETE FROM client_groups WHERE group_name=:t'), {"t": target_g})
             st.rerun()
 
-# --- 4. Company Register (排版絕對鎖定 + 修正 Delete 語法) ---
+# --- 4. Company Register (排版絕對鎖定) ---
 elif choice == "🏢 Company Register":
     st.header("🏢 Company Records Management")
     
@@ -73,9 +73,8 @@ elif choice == "🏢 Company Register":
         row = df_all[df_all['name_en'] == edit_target].iloc[0]
         
         # 兼容處理 ID
-        if 'id' in row: target_id = int(row['id'])
-        elif 'ID' in row: target_id = int(row['ID'])
-        else: target_id = int(row.name)
+        id_col = 'id' if 'id' in row else 'ID'
+        target_id = int(row[id_col])
         
         d = {'cg': row['client_group'], 'en': row['name_en'], 'ch': row['name_ch'], 'idate': row['incorp_date'], 'place': row['incorp_place'], 'p_oth': row['incorp_place_others'], 'ci': row['ci_no'], 'br': row['br_no'], 'type': row['co_type'], 'ra': row['reg_addr'], 'ca': row['corres_addr'], 'rl': row['round_loc'], 'sl': row['sign_loc'], 'cl': row['seal_loc'], 'n2e': row['nd2a_eff_date'], 'n2f': row['nd2a_file_date'], 'n2d': str(row['nd2a_download']) == 'True', 'n4e': row['nd4_eff_date'], 'n4f': row['nd4_file_date'], 'n4d': str(row['nd4_download']) == 'True', 'dis': row['dissolution_date']}
 
@@ -141,6 +140,7 @@ elif choice == "🏢 Company Register":
         b_col1, b_col2 = st.columns(2)
         if b_col1.button("Update Record"):
             with engine.begin() as conn:
+                # 使用雙引號強制對應 PostgreSQL 欄位
                 sql = text("""
                     UPDATE companies SET 
                     client_group=:cg, name_en=:en, name_ch=:ch, incorp_date=:idate, 
@@ -149,29 +149,12 @@ elif choice == "🏢 Company Register":
                     sign_loc=:sl, seal_loc=:cl, nd2a_eff_date=:n2e, nd2a_file_date=:n2f, 
                     nd2a_download=:n2d, nd4_eff_date=:n4e, nd4_file_date=:n4f, 
                     nd4_download=:n4d, dissolution_date=:dis 
-                    WHERE id=:id
+                    WHERE id=:id_val
                 """)
-                conn.execute(sql, {"cg": client_group, "en": name_en, "ch": name_ch, "idate": inc_date, "place": inc_place, "p_oth": place_others, "ci": ci_no, "br": br_no, "type": co_type, "ra": reg_addr, "ca": corres_addr, "rl": round_l, "sl": sign_l, "cl": common_l, "n2e": nd2a_eff, "n2f": nd2a_file, "n2d": str(nd2a_dl), "n4e": nd4_eff, "n4f": nd4_file, "n4d": str(nd4_dl), "dis": dis_date, "id": target_id})
+                conn.execute(sql, {"cg": client_group, "en": name_en, "ch": name_ch, "idate": inc_date, "place": inc_place, "p_oth": place_others, "ci": ci_no, "br": br_no, "type": co_type, "ra": reg_addr, "ca": corres_addr, "rl": round_l, "sl": sign_l, "cl": common_l, "n2e": nd2a_eff, "n2f": nd2a_file, "n2d": str(nd2a_dl), "n4e": nd4_eff, "n4f": nd4_file, "n4d": str(nd4_dl), "dis": dis_date, "id_val": target_id})
                 conn.execute(text("INSERT INTO audit_logs (company_name, action, change_details) VALUES (:n, 'UPDATE', 'Manual Update')"), {"n": name_en})
             st.success("Updated!")
             st.rerun()
         
-        # 修正後的 Delete 語法，處理 PostgreSQL 大細寫問題
-        if b_col2.button("⚠️ Delete Record"):
-            with engine.begin() as conn:
-                # 這裡使用雙引號 "id" 來確保 PostgreSQL 認得細寫欄位
-                conn.execute(text('DELETE FROM companies WHERE id = :id_val'), {"id_val": target_id})
-                conn.execute(text("INSERT INTO audit_logs (company_name, action, change_details) VALUES (:n, 'DELETE', 'Company Removed')"), {"n": name_en})
-            st.warning("Company Deleted!")
-            st.rerun()
-
-# --- 5. Dashboard ---
-elif choice == "📊 Dashboard":
-    st.header("📊 Compliance Overview")
-    df = pd.read_sql("SELECT * FROM companies", engine)
-    st.dataframe(df, use_container_width=True)
-    
-    st.write("---")
-    st.subheader("🕒 Audit Logs")
-    logs = pd.read_sql("SELECT * FROM audit_logs ORDER BY changed_at DESC", engine)
-    st.table(logs)
+        # 修正後的刪除指令
+        if b_col2.button("⚠️ Delete Record
