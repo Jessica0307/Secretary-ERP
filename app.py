@@ -11,7 +11,7 @@ except:
     st.error("❌ Please check DB_URL in Secrets")
     st.stop()
 
-# --- 2. Navigation (KEEP V34 Layout) ---
+# --- 2. Navigation (LOCK V34 Layout) ---
 st.set_page_config(page_title="ERP Cloud V34", layout="wide")
 choice = st.sidebar.radio("Navigation", ["📊 Dashboard", "🏢 Company Register", "⚙️ Group Management"])
 
@@ -29,11 +29,13 @@ if choice == "⚙️ Group Management":
     g_df = pd.read_sql("SELECT * FROM client_groups", engine)
     if not g_df.empty:
         target_g = st.selectbox("Select Group", g_df['group_name'].tolist())
-        if st.button("⚠️ Delete Group"):
-            # 唔用 SQL，用 Pandas 過濾後覆蓋
-            new_df = g_df[g_df['group_name'] != target_g]
-            new_df.to_sql('client_groups', engine, if_exists='replace', index=False)
-            st.rerun()
+        # 新增 Group Delete 的確認
+        with st.popover("⚠️ Delete Group"):
+            st.warning(f"Delete group '{target_g}'?")
+            if st.button("Confirm Delete Group"):
+                new_df = g_df[g_df['group_name'] != target_g]
+                new_df.to_sql('client_groups', engine, if_exists='replace', index=False)
+                st.rerun()
 
 # --- 4. Company Register ---
 elif choice == "🏢 Company Register":
@@ -110,32 +112,38 @@ elif choice == "🏢 Company Register":
     st.write("---")
     dis_date = st.date_input("Dissolution Date", value=d['dis'])
     
+    # --- 保存與確認邏輯 ---
     if mode == "🆕 Add New":
-        if st.button("💾 Save To Cloud"):
-            new_data = {'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no, 'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr, 'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l, 'nd2a_eff_date': nd2a_eff, 'nd2a_file_date': nd2a_file, 'nd2a_download': str(nd2a_dl), 'nd4_eff_date': nd4_eff, 'nd4_file_date': nd4_file, 'nd4_download': str(nd4_dl), 'dissolution_date': dis_date}
-            pd.DataFrame([new_data]).to_sql('companies', engine, if_exists='append', index=False)
-            st.success("Saved!")
-            st.rerun()
+        with st.popover("💾 Save To Cloud"):
+            st.write("Confirm save new company?")
+            if st.button("Yes, Confirm Save"):
+                new_data = {'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no, 'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr, 'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l, 'nd2a_eff_date': nd2a_eff, 'nd2a_file_date': nd2a_file, 'nd2a_download': str(nd2a_dl), 'nd4_eff_date': nd4_eff, 'nd4_file_date': nd4_file, 'nd4_download': str(nd4_dl), 'dissolution_date': dis_date}
+                pd.DataFrame([new_data]).to_sql('companies', engine, if_exists='append', index=False)
+                st.success("Saved!")
+                st.rerun()
     else:
         col_b1, col_b2 = st.columns(2)
-        # --- UPDATE 邏輯 (不使用 SQL DELETE，改用 Pandas 過濾後 Replace) ---
-        if col_b1.button("🆙 Update Record"):
-            # 1. 喺原本嘅 DataFrame 剔除舊嗰筆
-            df_filtered = df_all[df_all['name_en'] != target_name]
-            # 2. 準備新資料
-            updated_row = {'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no, 'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr, 'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l, 'nd2a_eff_date': nd2a_eff, 'nd2a_file_date': nd2a_file, 'nd2a_download': str(nd2a_dl), 'nd4_eff_date': nd4_eff, 'nd4_file_date': nd4_file, 'nd4_download': str(nd4_dl), 'dissolution_date': dis_date}
-            # 3. 合併並覆蓋整個 Table
-            final_df = pd.concat([df_filtered, pd.DataFrame([updated_row])], ignore_index=True)
-            final_df.to_sql('companies', engine, if_exists='replace', index=False)
-            st.success("Updated!")
-            st.rerun()
+        # --- UPDATE 確認 ---
+        with col_b1.popover("🆙 Update Record"):
+            st.write("Confirm update this record?")
+            if st.button("Yes, Confirm Update"):
+                df_filtered = df_all[df_all['name_en'] != target_name]
+                updated_row = {'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no, 'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr, 'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l, 'nd2a_eff_date': nd2a_eff, 'nd2a_file_date': nd2a_file, 'nd2a_download': str(nd2a_dl), 'nd4_eff_date': nd4_eff, 'nd4_file_date': nd4_file, 'nd4_download': str(nd4_dl), 'dissolution_date': dis_date}
+                final_df = pd.concat([df_filtered, pd.DataFrame([updated_row])], ignore_index=True)
+                final_df.to_sql('companies', engine, if_exists='replace', index=False)
+                st.success("Updated!")
+                st.rerun()
             
-        # --- DELETE 邏輯 ---
-        if col_b2.button("🔥 DELETE RECORD"):
-            df_filtered = df_all[df_all['name_en'] != target_name]
-            df_filtered.to_sql('companies', engine, if_exists='replace', index=False)
-            st.warning("Deleted!")
-            st.rerun()
+        # --- DELETE 強烈確認 ---
+        with col_b2.popover("🚨 DELETE RECORD"):
+            st.markdown("### ⚠️ DANGER ZONE")
+            st.error(f"You are deleting: **{target_name}**")
+            st.write("This cannot be undone!")
+            if st.button("🔥 YES, DELETE FOREVER"):
+                df_filtered = df_all[df_all['name_en'] != target_name]
+                df_filtered.to_sql('companies', engine, if_exists='replace', index=False)
+                st.warning("Deleted!")
+                st.rerun()
 
 # --- 5. Dashboard ---
 elif choice == "📊 Dashboard":
