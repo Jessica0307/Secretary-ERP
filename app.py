@@ -83,4 +83,61 @@ elif choice == "🏢 Company Register":
     if nd2a_eff:
         c3.warning(f"Statutory Period: 15 days\n\n⚠️ Deadline: {nd2a_eff + timedelta(days=15)}")
     else: c3.info("Statutory Period: 15 days")
-    nd
+    nd2a_dl = c4.checkbox("Downloaded", value=d['n2d'], key="n2d")
+
+    st.markdown("### 📝 Company Secretary Resignation (ND4)")
+    r1, r2, r3, r4 = st.columns([2, 2, 2, 1])
+    nd4_eff = r1.date_input("Effective Date (Resign)", value=d['n4e'], key="n4e")
+    nd4_file = r2.date_input("Filing Date (ND4)", value=d['n4f'], key="n4f")
+    if nd4_eff:
+        r3.warning(f"Statutory Period: 15 days\n\n⚠️ Deadline: {nd4_eff + timedelta(days=15)}")
+    else: r3.info("Statutory Period: 15 days")
+    nd4_dl = r4.checkbox("Downloaded", value=d['n4d'], key="n4d")
+
+    st.write("---")
+    st.markdown("### 📍 Address & Contact")
+    col_reg, col_cor = st.columns(2)
+    reg_addr = col_reg.text_area("Registered Office Address", value=d['ra'])
+    corres_addr = col_cor.text_area("Correspondence Address", value=d['ca'])
+    
+    st.markdown("### 🗄️ Seal Storage") 
+    l1, l2, l3 = st.columns(3)
+    round_l = l1.text_input("Round Chop Location", value=d['rl'])
+    sign_l = l2.text_input("Signature Chop Location", value=d['sl'])
+    common_l = l3.text_input("Common Seal Location", value=d['cl'])
+    
+    st.write("---")
+    dis_date = st.date_input("Company Dissolution Date", value=d['dis'])
+    
+    if mode == "🆕 Add New":
+        with st.popover("💾 Save To Records"):
+            st.write("Confirm adding this new company?")
+            if st.button("Yes, Confirm Save"):
+                new_data = {'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no, 'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr, 'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l, 'nd2a_eff_date': nd2a_eff, 'nd2a_file_date': nd2a_file, 'nd2a_download': str(nd2a_dl), 'nd4_eff_date': nd4_eff, 'nd4_file_date': nd4_file, 'nd4_download': str(nd4_dl), 'dissolution_date': dis_date}
+                pd.DataFrame([new_data]).to_sql('companies', engine, if_exists='append', index=False)
+                st.success("Saved!")
+                st.rerun()
+    else:
+        b_col1, b_col2 = st.columns(2)
+        with b_col1.popover("🆙 Update Record"):
+            st.write("Confirm update existing record?")
+            if st.button("Yes, Confirm Update"):
+                with engine.begin() as conn:
+                    # 修正 SQL 欄位名 (sign_loc, seal_loc, round_loc) 與變數對應
+                    sql = text("""UPDATE companies SET client_group=:cg, name_en=:en, name_ch=:ch, incorp_date=:idate, incorp_place=:place, incorp_place_others=:p_oth, ci_no=:ci, br_no=:br, co_type=:type, reg_addr=:ra, corres_addr=:ca, round_loc=:rl, sign_loc=:sl, seal_loc=:cl, nd2a_eff_date=:n2e, nd2a_file_date=:n2f, nd2a_download=:n2d, nd4_eff_date=:n4e, nd4_file_date=:n4f, nd4_download=:n4d, dissolution_date=:dis WHERE id=:id""")
+                    conn.execute(sql, {"cg": client_group, "en": name_en, "ch": name_ch, "idate": inc_date, "place": inc_place, "p_oth": place_others, "ci": ci_no, "br": br_no, "type": co_type, "ra": reg_addr, "ca": corres_addr, "rl": round_l, "sl": sign_l, "cl": common_l, "n2e": nd2a_eff, "n2f": nd2a_file, "n2d": str(nd2a_dl), "n4e": nd4_eff, "n4f": nd4_file, "n4d": str(nd4_dl), "dis": dis_date, "id": target_id})
+                st.success("Updated!")
+                st.rerun()
+        with b_col2.popover("🚨 DELETE RECORD"):
+            st.error(f"DELETE: {name_en}?")
+            if st.button("🔥 YES, DELETE FOREVER"):
+                with engine.begin() as conn:
+                    conn.execute(text("DELETE FROM companies WHERE id=:id"), {"id": target_id})
+                st.warning("Deleted.")
+                st.rerun()
+
+# --- 5. Dashboard ---
+elif choice == "📊 Dashboard":
+    st.header("📊 Compliance Overview")
+    df = pd.read_sql("SELECT * FROM companies", engine)
+    st.dataframe(df, use_container_width=True)
