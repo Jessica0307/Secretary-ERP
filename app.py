@@ -3,7 +3,7 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 from datetime import datetime, timedelta
 
-# --- 1. Database Connection ---
+# --- 1. Database Connection (保持鎖定) ---
 try:
     DB_URL = st.secrets["DB_URL"]
     engine = create_engine(DB_URL)
@@ -11,11 +11,11 @@ except:
     st.error("❌ Please check DB_URL in Secrets")
     st.stop()
 
-# --- 2. Navigation (LOCK V34 Layout) ---
+# --- 2. Navigation (保持 V34 佈局鎖定) ---
 st.set_page_config(page_title="ERP Cloud V34", layout="wide")
 choice = st.sidebar.radio("Navigation", ["📊 Dashboard", "🏢 Company Register", "⚙️ Group Management"])
 
-# --- 3. Group Management ---
+# --- 3. Group Management (保持鎖定) ---
 if choice == "⚙️ Group Management":
     st.header("⚙️ Client Group Management")
     new_g = st.text_input("Group Name to Add")
@@ -36,10 +36,12 @@ if choice == "⚙️ Group Management":
                 new_df.to_sql('client_groups', engine, if_exists='replace', index=False)
                 st.rerun()
 
-# --- 4. Company Register ---
+# --- 4. Company Register (加入 Copy 選項，排版絕對鎖定) ---
 elif choice == "🏢 Company Register":
     st.header("🏢 Company Records Management")
-    mode = st.radio("Mode", ["🆕 Add New", "✏️ Edit Existing"], horizontal=True)
+    
+    # 這裡加入 "📋 Copy Existing" 選項
+    mode = st.radio("Mode", ["🆕 Add New", "✏️ Edit Existing", "📋 Copy Existing"], horizontal=True)
     
     df_all = pd.read_sql("SELECT * FROM companies", engine)
     groups = pd.read_sql("SELECT group_name FROM client_groups", engine)['group_name'].tolist()
@@ -47,8 +49,10 @@ elif choice == "🏢 Company Register":
     d = {'cg': "", 'en': "", 'ch': "", 'idate': None, 'place': "HK", 'p_oth': "", 'ci': "", 'br': "", 'type': "Private Company", 'ra': "", 'ca': "", 'rl': "", 'sl': "", 'cl': "", 'n2e': None, 'n2f': None, 'n2d': False, 'n4e': None, 'n4f': None, 'n4d': False, 'dis': None}
     target_name = None
 
-    if mode == "✏️ Edit Existing" and not df_all.empty:
-        target_name = st.selectbox("Select Company to Edit", df_all['name_en'].tolist())
+    # 修改與複製的讀取邏輯
+    if mode in ["✏️ Edit Existing", "📋 Copy Existing"] and not df_all.empty:
+        label = "Select Company to Edit" if mode == "✏️ Edit Existing" else "Select Company to Copy From"
+        target_name = st.selectbox(label, df_all['name_en'].tolist())
         row = df_all[df_all['name_en'] == target_name].iloc[0]
         
         d = {
@@ -63,6 +67,11 @@ elif choice == "🏢 Company Register":
             'n4d': str(row.get('nd4_download', "")) == 'True',
             'dis': row.get('dissolution_date')
         }
+        
+        # 如果是 Copy 模式，清空名稱相關欄位，避免直接覆蓋舊公司
+        if mode == "📋 Copy Existing":
+            d['en'] = d['en'] + " (Copy)"
+            d['ch'] = d['ch'] + " (複本)"
 
     st.markdown("### General Information")
     client_group = st.selectbox("Select Client Group", [""] + groups, index=(groups.index(d['cg'])+1 if d['cg'] in groups else 0))
@@ -81,25 +90,21 @@ elif choice == "🏢 Company Register":
     co_type = st.selectbox("Company Type", ["Private Company", "Public Company", "Company Limited by Guarantee"], index=["Private Company", "Public Company", "Company Limited by Guarantee"].index(d['type']))
     
     st.write("---")
-    # --- ND2A 位 (100% 還原法定日數顯示) ---
     st.markdown("### 📝 Company Secretary Appointment (ND2A)")
     c1, c2, c3, c4 = st.columns([2, 2, 2, 1])
     nd2a_eff = c1.date_input("Effective Date (Appt)", value=d['n2e'], key="n2e")
     nd2a_file = c2.date_input("Filing Date (ND2A)", value=d['n2f'], key="n2f")
     if nd2a_eff:
-        # 直接標明法定日數 15 日
         c3.warning(f"Statutory Period: 15 days\n\n⚠️ Deadline: {nd2a_eff + timedelta(days=15)}")
     else: 
         c3.info("Statutory Period: 15 days")
     nd2a_dl = c4.checkbox("Downloaded", value=d['n2d'], key="n2d")
 
-    # --- ND4 位 (100% 還原法定日數顯示) ---
     st.markdown("### 📝 Company Secretary Resignation (ND4)")
     r1, r2, r3, r4 = st.columns([2, 2, 2, 1])
     nd4_eff = r1.date_input("Effective Date (Resign)", value=d['n4e'], key="n4e")
     nd4_file = r2.date_input("Filing Date (ND4)", value=d['n4f'], key="n4f")
     if nd4_eff:
-        # 直接標明法定日數 15 日
         r3.warning(f"Statutory Period: 15 days\n\n⚠️ Deadline: {nd4_eff + timedelta(days=15)}")
     else: 
         r3.info("Statutory Period: 15 days")
@@ -120,14 +125,14 @@ elif choice == "🏢 Company Register":
     st.write("---")
     dis_date = st.date_input("Company Dissolution Date", value=d['dis'])
     
-    # --- 確認與保存邏輯 (Pandas 覆蓋法 + 確認 Popover) ---
-    if mode == "🆕 Add New":
+    # --- 保存、修改與複製的邏輯 ---
+    if mode in ["🆕 Add New", "📋 Copy Existing"]:
         with st.popover("💾 Save To Cloud"):
-            st.write("Confirm save new company?")
+            st.write("Confirm save this as a new record?")
             if st.button("Yes, Confirm Save"):
                 new_data = {'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no, 'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr, 'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l, 'nd2a_eff_date': nd2a_eff, 'nd2a_file_date': nd2a_file, 'nd2a_download': str(nd2a_dl), 'nd4_eff_date': nd4_eff, 'nd4_file_date': nd4_file, 'nd4_download': str(nd4_dl), 'dissolution_date': dis_date}
                 pd.DataFrame([new_data]).to_sql('companies', engine, if_exists='append', index=False)
-                st.success("Saved!")
+                st.success("New Record Saved!")
                 st.rerun()
     else:
         col_b1, col_b2 = st.columns(2)
@@ -150,7 +155,7 @@ elif choice == "🏢 Company Register":
                 st.warning("Deleted!")
                 st.rerun()
 
-# --- 5. Dashboard ---
+# --- 5. Dashboard (保持鎖定) ---
 elif choice == "📊 Dashboard":
     st.header("📊 Compliance Overview")
     df = pd.read_sql("SELECT * FROM companies", engine)
