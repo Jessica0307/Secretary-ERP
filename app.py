@@ -36,7 +36,7 @@ if choice == "⚙️ Group Management":
                 new_df.to_sql('client_groups', engine, if_exists='replace', index=False)
                 st.rerun()
 
-# --- 4. Company Register (優化 Copy 邏輯) ---
+# --- 4. Company Register (加入必填限制與空白選單) ---
 elif choice == "🏢 Company Register":
     st.header("🏢 Company Records Management")
     mode = st.radio("Mode", ["🆕 Add New", "✏️ Edit Existing", "📋 Copy Existing"], horizontal=True)
@@ -44,12 +44,10 @@ elif choice == "🏢 Company Register":
     df_all = pd.read_sql("SELECT * FROM companies", engine)
     groups = pd.read_sql("SELECT group_name FROM client_groups", engine)['group_name'].tolist()
     
-    # 預設空白資料
-    d = {'cg': "", 'en': "", 'ch': "", 'idate': None, 'place': "HK", 'p_oth': "", 'ci': "", 'br': "", 'type': "Private Company", 'ra': "", 'ca': "", 'rl': "", 'sl': "", 'cl': "", 'n2e': None, 'n2f': None, 'n2d': False, 'n4e': None, 'n4f': None, 'n4d': False, 'dis': None}
+    d = {'cg': "", 'en': "", 'ch': "", 'idate': None, 'place': "", 'p_oth': "", 'ci': "", 'br': "", 'type': "", 'ra': "", 'ca': "", 'rl': "", 'sl': "", 'cl': "", 'n2e': None, 'n2f': None, 'n2d': False, 'n4e': None, 'n4f': None, 'n4d': False, 'dis': None}
     target_name = None
 
     if mode in ["✏️ Edit Existing", "📋 Copy Existing"] and not df_all.empty:
-        # 加一個空白選項 [""]，避免自動填入第一間
         comp_list = [""] + df_all['name_en'].tolist()
         label = "Select Company to Edit" if mode == "✏️ Edit Existing" else "Select Company to Copy From"
         target_name = st.selectbox(label, comp_list)
@@ -58,9 +56,9 @@ elif choice == "🏢 Company Register":
             row = df_all[df_all['name_en'] == target_name].iloc[0]
             d = {
                 'cg': row.get('client_group', ""), 'en': row.get('name_en', ""), 'ch': row.get('name_ch', ""), 
-                'idate': row.get('incorp_date'), 'place': row.get('incorp_place', "HK"), 
+                'idate': row.get('incorp_date'), 'place': row.get('incorp_place', ""), 
                 'p_oth': row.get('incorp_place_others', ""), 'ci': row.get('ci_no', ""), 'br': row.get('br_no', ""), 
-                'type': row.get('co_type', "Private Company"), 'ra': row.get('reg_addr', ""), 'ca': row.get('corres_addr', ""),
+                'type': row.get('co_type', ""), 'ra': row.get('reg_addr', ""), 'ca': row.get('corres_addr', ""),
                 'rl': row.get('round_loc', ""), 'sl': row.get('sign_loc', ""), 'cl': row.get('seal_loc', ""),
                 'n2e': row.get('nd2a_eff_date'), 'n2f': row.get('nd2a_file_date'), 
                 'n2d': str(row.get('nd2a_download', "")) == 'True',
@@ -68,7 +66,6 @@ elif choice == "🏢 Company Register":
                 'n4d': str(row.get('nd4_download', "")) == 'True',
                 'dis': row.get('dissolution_date')
             }
-            # 如果是 Copy 模式，建議清空名稱讓用戶輸入新的
             if mode == "📋 Copy Existing":
                 d['en'] = "" 
                 d['ch'] = ""
@@ -80,14 +77,20 @@ elif choice == "🏢 Company Register":
     name_ch = col2.text_input("Company Chinese Name", value=d['ch'])
     col3, col4 = st.columns(2)
     inc_date = col3.date_input("Date of Incorporation", value=d['idate'])
-    inc_place = col4.selectbox("Place of Incorporation", ["HK", "BVI", "Cayman Island", "Others"], index=["HK", "BVI", "Cayman Island", "Others"].index(d['place']))
+    
+    # 註冊地 default 改為空白
+    places = ["", "HK", "BVI", "Cayman Island", "Others"]
+    inc_place = col4.selectbox("Place of Incorporation", places, index=places.index(d['place']) if d['place'] in places else 0)
     place_others = st.text_input("Specify Country", value=d['p_oth']) if inc_place == "Others" else ""
 
     st.write("---")
     col_ci, col_br = st.columns(2)
     ci_no = col_ci.text_input("CI Number", value=d['ci'])
     br_no = col_br.text_input("BR Number", value=d['br'])
-    co_type = st.selectbox("Company Type", ["Private Company", "Public Company", "Company Limited by Guarantee"], index=["Private Company", "Public Company", "Company Limited by Guarantee"].index(d['type']))
+    
+    # Company Type default 改為空白
+    types = ["", "Private Company", "Public Company", "Company Limited by Guarantee"]
+    co_type = st.selectbox("Company Type", types, index=types.index(d['type']) if d['type'] in types else 0)
     
     st.write("---")
     st.markdown("### 📝 Company Secretary Appointment (ND2A)")
@@ -125,29 +128,43 @@ elif choice == "🏢 Company Register":
     st.write("---")
     dis_date = st.date_input("Company Dissolution Date", value=d['dis'])
     
+    # 必填驗證邏輯
+    required_fields = {
+        "Client Group": client_group, "English Name": name_en, "Chinese Name": name_ch,
+        "Incorporation Place": inc_place, "CI No": ci_no, "BR No": br_no,
+        "Company Type": co_type, "Registered Address": reg_addr, "Correspondence Address": corres_addr,
+        "Round Chop Location": round_l, "Signature Chop Location": sign_l, "Common Seal Location": common_l
+    }
+
+    def check_fields():
+        empty = [k for k, v in required_fields.items() if not v or str(v).strip() == ""]
+        if empty:
+            st.error(f"❌ 以下項目為必填：{', '.join(empty)}")
+            return False
+        return True
+
     # --- 保存、修改與複製 ---
     if mode in ["🆕 Add New", "📋 Copy Existing"]:
         with st.popover("💾 Save To Cloud"):
-            st.write("Confirm save this as a new record?")
             if st.button("Yes, Confirm Save"):
-                new_data = {'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no, 'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr, 'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l, 'nd2a_eff_date': nd2a_eff, 'nd2a_file_date': nd2a_file, 'nd2a_download': str(nd2a_dl), 'nd4_eff_date': nd4_eff, 'nd4_file_date': nd4_file, 'nd4_download': str(nd4_dl), 'dissolution_date': dis_date}
-                pd.DataFrame([new_data]).to_sql('companies', engine, if_exists='append', index=False)
-                st.success("New Record Saved!")
-                st.rerun()
+                if check_fields():
+                    new_data = {'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no, 'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr, 'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l, 'nd2a_eff_date': nd2a_eff, 'nd2a_file_date': nd2a_file, 'nd2a_download': str(nd2a_dl), 'nd4_eff_date': nd4_eff, 'nd4_file_date': nd4_file, 'nd4_download': str(nd4_dl), 'dissolution_date': dis_date}
+                    pd.DataFrame([new_data]).to_sql('companies', engine, if_exists='append', index=False)
+                    st.success("New Record Saved!")
+                    st.rerun()
     else:
         col_b1, col_b2 = st.columns(2)
         with col_b1.popover("🆙 Update Record"):
-            st.write("Confirm update this record?")
             if st.button("Yes, Confirm Update"):
-                df_filtered = df_all[df_all['name_en'] != target_name]
-                updated_row = {'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no, 'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr, 'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l, 'nd2a_eff_date': nd2a_eff, 'nd2a_file_date': nd2a_file, 'nd2a_download': str(nd2a_dl), 'nd4_eff_date': nd4_eff, 'nd4_file_date': nd4_file, 'nd4_download': str(nd4_dl), 'dissolution_date': dis_date}
-                final_df = pd.concat([df_filtered, pd.DataFrame([updated_row])], ignore_index=True)
-                final_df.to_sql('companies', engine, if_exists='replace', index=False)
-                st.success("Updated!")
-                st.rerun()
+                if check_fields():
+                    df_filtered = df_all[df_all['name_en'] != target_name]
+                    updated_row = {'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no, 'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr, 'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l, 'nd2a_eff_date': nd2a_eff, 'nd2a_file_date': nd2a_file, 'nd2a_download': str(nd2a_dl), 'nd4_eff_date': nd4_eff, 'nd4_file_date': nd4_file, 'nd4_download': str(nd4_dl), 'dissolution_date': dis_date}
+                    final_df = pd.concat([df_filtered, pd.DataFrame([updated_row])], ignore_index=True)
+                    final_df.to_sql('companies', engine, if_exists='replace', index=False)
+                    st.success("Updated!")
+                    st.rerun()
             
         with col_b2.popover("🚨 DELETE RECORD"):
-            st.markdown("### ⚠️ DANGER ZONE")
             st.error(f"Deleting: **{target_name}**")
             if st.button("🔥 YES, DELETE FOREVER"):
                 df_filtered = df_all[df_all['name_en'] != target_name]
