@@ -12,36 +12,36 @@ except:
     st.error("❌ Please check DB_URL in Secrets")
     st.stop()
 
-# --- 2. Navigation (保持 V23 配置，僅新增 Data Exchange) ---
+# --- 2. Navigation ---
 st.set_page_config(page_title="ERP Cloud V34", layout="wide")
 choice = st.sidebar.radio("Navigation", ["📊 Dashboard", "🏢 Company Register", "⚙️ Group Management", "📤 Data Exchange"])
 
-# 定義必填欄位清單 (用於上傳驗證)
+# 定義上傳時必須檢查的欄位
 REQUIRED_COLS = ["client_group", "name_en", "name_ch", "incorp_date", "incorp_place", "ci_no", "br_no", "co_type", "reg_addr", "corres_addr", "round_loc", "sign_loc", "seal_loc"]
 
-# --- 3. Data Exchange (新增的 Template 同 Backup 功能) ---
+# --- 3. Data Exchange (新增支援 N/A 豁免的上傳與備份功能) ---
 if choice == "📤 Data Exchange":
     st.header("📤 Data Exchange & Backup")
     
     st.subheader("1. Download & Backup")
     col_ex1, col_ex2 = st.columns(2)
     
-    # 範本與導出欄位定義
+    # 範本欄位定義
     template_cols = ["client_group", "name_en", "name_ch", "incorp_date", "incorp_place", "incorp_place_others", "ci_no", "br_no", "co_type", "reg_addr", "corres_addr", "round_loc", "sign_loc", "seal_loc", "nd2a_eff_date", "nd2a_file_date", "nd2a_download", "nd4_eff_date", "nd4_file_date", "nd4_download", "dissolution_date"]
     
-    # A. 空白範本
+    # 下載空白範本
     tmp_df = pd.DataFrame(columns=template_cols)
     buffer_tmp = io.BytesIO()
     with pd.ExcelWriter(buffer_tmp, engine='xlsxwriter') as writer:
         tmp_df.to_excel(writer, index=False)
     col_ex1.download_button(label="📥 Download Blank Template", data=buffer_tmp.getvalue(), file_name="Company_Record_Template.xlsx", mime="application/vnd.ms-excel")
 
-    # B. 完整備份 (Export)
+    # 完整導出 (Backup)
     df_all_export = pd.read_sql("SELECT * FROM companies", engine)
     buffer_all = io.BytesIO()
     with pd.ExcelWriter(buffer_all, engine='xlsxwriter') as writer:
         df_all_export.to_excel(writer, index=False)
-    col_ex2.download_button(label="📦 Export All Data (Backup List)", data=buffer_all.getvalue(), file_name=f"Full_Backup_{datetime.now().strftime('%Y%m%d')}.xlsx", mime="application/vnd.ms-excel")
+    col_ex2.download_button(label="📦 Export All Data (Backup)", data=buffer_all.getvalue(), file_name=f"Full_Backup_{datetime.now().strftime('%Y%m%d')}.xlsx", mime="application/vnd.ms-excel")
 
     st.write("---")
     st.subheader("2. Upload & Bulk Import")
@@ -49,35 +49,43 @@ if choice == "📤 Data Exchange":
     
     if uploaded_file:
         try:
-            up_df = pd.read_excel(uploaded_file, engine='openpyxl')
-            st.write("Preview:")
+            # 讀取 Excel 並保留 n/a 等字眼
+            up_df = pd.read_excel(uploaded_file, engine='openpyxl', keep_default_na=False)
+            st.write("Preview (First 5 rows):")
             st.dataframe(up_df.head())
             
             if st.button("🚀 Confirm Upload to Cloud"):
                 error_logs = []
-                # 檢查必填欄位是否存在於 Excel
+                # 檢查 Excel 欄位是否存在
                 for col in REQUIRED_COLS:
                     if col not in up_df.columns:
                         st.error(f"❌ 檔案格式不符，缺少必要欄位: {col}")
                         st.stop()
                 
-                # 逐行檢查內容是否為空
+                # 智慧型 N/A 豁免檢查
                 for i, row in up_df.iterrows():
-                    missing = [c for c in REQUIRED_COLS if pd.isna(row[c]) or str(row[c]).strip() == ""]
+                    missing = []
+                    for c in REQUIRED_COLS:
+                        val = str(row[c]).strip().lower()
+                        # 只有當格仔完全冇嘢，或者係 Python 嘅空值 NaN 時才報錯
+                        if val == "" or val == "nan":
+                            missing.append(c)
+                    
                     if missing:
                         error_logs.append(f"Row {i+2}: 缺少 {', '.join(missing)}")
                 
                 if error_logs:
-                    st.error("❌ 上傳攔截：請修正以下漏填項")
+                    st.error("❌ 上傳攔截：偵測到真正空白嘅格仔，請填寫資料 (或打 n/a) 後再試")
                     for log in error_logs[:10]: st.write(log)
                 else:
-                    up_df.to_sql('companies', engine, if_exists='append', index=False)
-                    st.success("✅ 成功匯入資料！")
-                    st.rerun()
+                    with st.spinner("Saving to database..."):
+                        up_df.to_sql('companies', engine, if_exists='append', index=False)
+                        st.success(f"✅ 成功匯入 {len(up_df)} 條紀錄！")
+                        st.rerun()
         except Exception as e:
             st.error(f"Upload Error: {e}")
 
-# --- 4. Company Register (100% 第 23 版原始代碼，絕無改動) ---
+# --- 4. Company Register (100% 鎖定第 23 版邏輯) ---
 elif choice == "🏢 Company Register":
     st.header("🏢 Company Records Management")
     mode = st.radio("Mode", ["🆕 Add New", "✏️ Edit Existing", "📋 Copy Existing"], horizontal=True)
@@ -108,11 +116,9 @@ elif choice == "🏢 Company Register":
                 'dis': row.get('dissolution_date')
             }
             if mode == "📋 Copy Existing":
-                d['en'] = "" 
-                d['ch'] = ""
+                d['en'], d['ch'] = "", ""
 
     st.markdown("### General Information")
-    
     def red_label(text, value):
         if not value or str(value).strip() == "" or value is None:
             return f":red[⚠️ {text} (Required!)]"
@@ -127,9 +133,7 @@ elif choice == "🏢 Company Register":
     places = ["", "HK", "BVI", "Cayman Island", "Others"]
     p_idx = places.index(d['place']) if d['place'] in places else 0
     inc_place = col4.selectbox(red_label("Place of Incorporation", d['place']), places, index=p_idx)
-    place_others = ""
-    if inc_place == "Others":
-        place_others = st.text_input(red_label("Specify Country", d['p_oth']), value=d['p_oth'])
+    place_others = st.text_input(red_label("Specify Country", d['p_oth']), value=d['p_oth']) if inc_place == "Others" else ""
 
     st.write("---")
     col_ci, col_br = st.columns(2)
@@ -169,8 +173,8 @@ elif choice == "🏢 Company Register":
     st.write("---")
     dis_date = st.date_input("Company Dissolution Date", value=d['dis'])
     
-    required_fields = {"Client Group": client_group, "English Name": name_en, "Chinese Name": name_ch, "Incorporation Date": inc_date, "Incorporation Place": inc_place, "CI No": ci_no, "BR No": br_no, "Company Type": co_type, "Registered Address": reg_addr, "Correspondence Address": corres_addr, "Round Chop Location": round_l, "Signature Chop Location": sign_l, "Common Seal Location": common_l}
-    if inc_place == "Others": required_fields["Specify Country"] = place_others
+    required_fields = {"Client Group": client_group, "EN Name": name_en, "CH Name": name_ch, "Inc Date": inc_date, "Inc Place": inc_place, "CI No": ci_no, "BR No": br_no, "Co Type": co_type, "Reg Addr": reg_addr, "Cor Addr": corres_addr, "Round Chop": round_l, "Sign Chop": sign_l, "Common Seal": common_l}
+    if inc_place == "Others": required_fields["Country"] = place_others
 
     def check_fields():
         empty = [k for k, v in required_fields.items() if not v or str(v).strip() == "" or v is None]
@@ -218,6 +222,7 @@ elif choice == "⚙️ Group Management":
     g_df = pd.read_sql("SELECT * FROM client_groups", engine)
     if not g_df.empty:
         target_g = st.selectbox("Select Group", g_df['group_name'].tolist())
-        if st.button("Confirm Delete Group"):
-            g_df[g_df['group_name'] != target_g].to_sql('client_groups', engine, if_exists='replace', index=False)
-            st.rerun()
+        with st.popover("🗑️ Delete Group"):
+            if st.button("Confirm Delete Group"):
+                g_df[g_df['group_name'] != target_g].to_sql('client_groups', engine, if_exists='replace', index=False)
+                st.rerun()
