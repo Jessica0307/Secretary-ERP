@@ -14,13 +14,13 @@ except:
     st.stop()
 
 # --- 2. Navigation ---
-st.set_page_config(page_title="ERP Cloud V38", layout="wide")
+st.set_page_config(page_title="ERP Cloud V39", layout="wide")
 choice = st.sidebar.radio("Navigation", ["📊 Dashboard", "🏢 Company Register", "⚙️ Group Management", "📤 Data Exchange"])
 
 # 定義必填欄位
 REQUIRED_COLS = ["client_group", "name_en", "name_ch", "incorp_date", "incorp_place", "ci_no", "br_no", "co_type", "reg_addr", "corres_addr", "round_loc", "sign_loc", "seal_loc"]
 
-# --- 3. PDF 生成函式 (純日期、逐項分行版) ---
+# --- 3. PDF 生成函式 (修復中文 + 強化標題) ---
 def generate_custom_pdf(selected_df):
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     
@@ -32,25 +32,28 @@ def generate_custom_pdf(selected_df):
         except:
             return str(val)
 
+    # 加入 Google Fonts 連結解決雲端環境無中文字型問題
     html_content = f"""
     <html>
     <head>
         <meta charset="UTF-8">
+        <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+HK:wght@400;700&display=swap" rel="stylesheet">
         <style>
             @page {{ size: A4; margin: 15mm; }}
             body {{ 
-                font-family: 'Arial', 'Microsoft JhengHei', 'PingFang TC', 'Noto Sans TC', sans-serif; 
+                font-family: 'Noto Sans HK', sans-serif; 
                 color: #2c3e50; 
                 line-height: 1.6; 
             }}
-            .header {{ text-align: center; border-bottom: 2px solid #34495e; padding-bottom: 10px; margin-bottom: 20px; }}
-            .company-card {{ page-break-inside: avoid; border: 1px solid #dcdde1; border-radius: 8px; padding: 25px; margin-bottom: 30px; background-color: #fbfbfb; }}
-            .name-en {{ font-size: 18pt; font-weight: bold; color: #2980b9; }}
-            .name-ch {{ font-size: 15pt; color: #333; margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px; }}
-            table {{ width: 100%; border-collapse: collapse; margin-top: 5px; font-size: 10pt; }}
-            th {{ text-align: left; width: 45%; color: #7f8c8d; border-bottom: 1px solid #f1f2f6; padding: 8px 0; font-weight: bold; }}
-            td {{ border-bottom: 1px solid #f1f2f6; padding: 8px 0; color: #2c3e50; }}
-            .section-title {{ background: #f1f4f6; padding: 5px 12px; font-weight: bold; font-size: 11pt; margin-top: 20px; border-left: 4px solid #3498db; }}
+            .header {{ text-align: center; border-bottom: 3px solid #34495e; padding-bottom: 10px; margin-bottom: 25px; }}
+            .header h1 {{ font-size: 24pt; margin: 0; }}
+            .company-card {{ page-break-inside: avoid; border: 1px solid #dcdde1; border-radius: 10px; padding: 30px; margin-bottom: 35px; background-color: #fbfbfb; }}
+            .name-en {{ font-size: 22pt; font-weight: bold; color: #2980b9; margin: 0; }}
+            .name-ch {{ font-size: 18pt; font-weight: bold; color: #333; margin-top: 5px; margin-bottom: 20px; border-bottom: 2px solid #eee; padding-bottom: 10px; }}
+            table {{ width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 11pt; }}
+            th {{ text-align: left; width: 45%; color: #7f8c8d; border-bottom: 1px solid #f1f2f6; padding: 10px 0; font-weight: 700; }}
+            td {{ border-bottom: 1px solid #f1f2f6; padding: 10px 0; color: #2c3e50; }}
+            .section-title {{ background: #f1f4f6; padding: 8px 15px; font-weight: bold; font-size: 13pt; margin-top: 25px; border-left: 6px solid #3498db; color: #2c3e50; }}
         </style>
     </head>
     <body>
@@ -87,7 +90,7 @@ def generate_custom_pdf(selected_df):
     html_content += "</body></html>"
     return HTML(string=html_content).write_pdf()
 
-# --- 4. Dashboard (去時間化 + 自選 PDF + 篩選) ---
+# --- 4. Dashboard (去時間化 + 自選 PDF) ---
 if choice == "📊 Dashboard":
     st.header("📊 Compliance Overview")
     df_raw = pd.read_sql("SELECT * FROM companies", engine)
@@ -120,7 +123,7 @@ if choice == "📊 Dashboard":
                 "nd4_eff_date": st.column_config.DateColumn("ND4 Eff", format="YYYY-MM-DD"),
             }, 
             disabled=[c for c in df_display.columns if c != "Select"], 
-            hide_index=True, use_container_width=True, key="dashboard_editor_v38"
+            hide_index=True, use_container_width=True, key="dashboard_editor_v39"
         )
         
         selected_rows = edited_df[edited_df["Select"] == True]
@@ -142,7 +145,7 @@ if choice == "📊 Dashboard":
                     st.success("Deleted!"); st.rerun()
     else: st.info("No records.")
 
-# --- 5. Company Register (鎖定 V32 邏輯) ---
+# --- 5. Company Register (維持鎖定) ---
 elif choice == "🏢 Company Register":
     st.header("🏢 Company Records Management")
     mode = st.radio("Mode", ["🆕 Add New", "✏️ Edit Existing", "📋 Copy Existing"], horizontal=True)
@@ -189,10 +192,9 @@ elif choice == "🏢 Company Register":
                 df_f = df_all[df_all['name_en'] != target_name]
                 up_r = {'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no, 'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr, 'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l, 'nd2a_eff_date': n2e, 'nd2a_file_date': n2f, 'nd4_eff_date': n4e, 'nd4_file_date': n4f, 'dissolution_date': dis_date}
                 pd.concat([df_f, pd.DataFrame([up_r])], ignore_index=True).to_sql('companies', engine, if_exists='replace', index=False); st.success("Updated!"); st.rerun()
-        with cb2.popover("🚨 DELETE THIS COMPANY"):
-            st.error("⚠️ ATTENTION!")
+        with cb2.popover("🚨 DELETE"):
             confirm_text = st.text_input("Type DELETE to confirm", key="single_del_input")
-            if st.button("🔥 YES, DELETE NOW", disabled=(confirm_text != "DELETE")):
+            if st.button("🔥 DELETE NOW", disabled=(confirm_text != "DELETE")):
                 df_all[df_all['name_en'] != target_name].to_sql('companies', engine, if_exists='replace', index=False)
                 st.warning("Deleted."); st.rerun()
 
@@ -210,16 +212,14 @@ elif choice == "⚙️ Group Management":
     if not g_df.empty:
         target_g = st.selectbox("Select Group", g_df['group_name'].tolist())
         with st.popover("🗑️ Delete Group"):
-            st.error(f"Delete Group: **{target_g}**?")
-            conf = st.text_input("Type DELETE to confirm group removal", key="group_del_input")
+            conf = st.text_input("Type DELETE to confirm", key="group_del_input")
             if st.button("Confirm Delete Group", disabled=(conf != "DELETE")):
                 g_df[g_df['group_name'] != target_g].to_sql('client_groups', engine, if_exists='replace', index=False)
                 st.rerun()
 
-# --- 7. Data Exchange (V32 邏輯) ---
+# --- 7. Data Exchange ---
 elif choice == "📤 Data Exchange":
     st.header("📤 Data Exchange & Backup")
-    st.subheader("1. Download & Backup")
     col_ex1, col_ex2 = st.columns(2)
     template_cols = ["client_group", "name_en", "name_ch", "incorp_date", "incorp_place", "incorp_place_others", "ci_no", "br_no", "co_type", "reg_addr", "corres_addr", "round_loc", "sign_loc", "seal_loc", "nd2a_eff_date", "nd2a_file_date", "nd2a_download", "nd4_eff_date", "nd4_file_date", "nd4_download", "dissolution_date"]
     tmp_df = pd.DataFrame(columns=template_cols)
