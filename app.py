@@ -4,7 +4,7 @@ from sqlalchemy import create_engine, text
 from datetime import datetime, timedelta
 import io
 
-# --- 1. Database Connection (鎖定) ---
+# --- 1. Database Connection (鎖定 V28) ---
 try:
     DB_URL = st.secrets["DB_URL"]
     engine = create_engine(DB_URL)
@@ -12,11 +12,11 @@ except:
     st.error("❌ Please check DB_URL in Secrets")
     st.stop()
 
-# --- 2. Navigation (LOCK V28) ---
+# --- 2. Navigation ---
 st.set_page_config(page_title="ERP Cloud V34", layout="wide")
 choice = st.sidebar.radio("Navigation", ["📊 Dashboard", "🏢 Company Register", "⚙️ Group Management", "📤 Data Exchange"])
 
-# 定義必填欄位
+# 定義必填欄位 (用於上傳驗證)
 REQUIRED_COLS = ["client_group", "name_en", "name_ch", "incorp_date", "incorp_place", "ci_no", "br_no", "co_type", "reg_addr", "corres_addr", "round_loc", "sign_loc", "seal_loc"]
 
 # --- 3. Data Exchange (鎖定 V28 邏輯) ---
@@ -96,55 +96,70 @@ elif choice == "🏢 Company Register":
     l1, l2, l3 = st.columns(3); round_l = l1.text_input(red_label("Round", d['rl']), value=d['rl']); sign_l = l2.text_input(red_label("Sign", d['sl']), value=d['sl']); common_l = l3.text_input(red_label("Common", d['cl']), value=d['cl'])
     dis_date = st.date_input("Dissolution", value=d['dis'])
     
-    required_fields = {"Group": client_group, "EN": name_en, "CH": name_ch, "Date": inc_date, "Place": inc_place, "CI": ci_no, "BR": br_no, "Type": co_type, "Reg": reg_addr, "Cor": corres_addr, "Round": round_l, "Sign": sign_l, "Common": common_l}
     if mode in ["🆕 Add New", "📋 Copy Existing"]:
         with st.popover("💾 Save"):
             if st.button("Confirm Save"):
-                if all(required_fields.values()):
-                    pd.DataFrame([{'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no, 'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr, 'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l, 'nd2a_eff_date': n2e, 'nd2a_file_date': n2f, 'nd4_eff_date': n4e, 'nd4_file_date': n4f, 'dissolution_date': dis_date}]).to_sql('companies', engine, if_exists='append', index=False)
-                    st.success("Saved!"); st.rerun()
+                pd.DataFrame([{'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no, 'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr, 'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l, 'nd2a_eff_date': n2e, 'nd2a_file_date': n2f, 'nd4_eff_date': n4e, 'nd4_file_date': n4f, 'dissolution_date': dis_date}]).to_sql('companies', engine, if_exists='append', index=False)
+                st.success("Saved!"); st.rerun()
     else:
-        col_b1, col_b2 = st.columns(2)
-        with col_b1.popover("🆙 Update"):
+        with st.popover("🆙 Update"):
             if st.button("Confirm Update"):
                 df_f = df_all[df_all['name_en'] != target_name]
                 up_r = {'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no, 'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr, 'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l, 'nd2a_eff_date': n2e, 'nd2a_file_date': n2f, 'nd4_eff_date': n4e, 'nd4_file_date': n4f, 'dissolution_date': dis_date}
                 pd.concat([df_f, pd.DataFrame([up_r])], ignore_index=True).to_sql('companies', engine, if_exists='replace', index=False); st.success("Updated!"); st.rerun()
 
-# --- 5. Dashboard (新增批量刪除功能) ---
+# --- 5. Dashboard (批量操作優化) ---
 elif choice == "📊 Dashboard":
-    st.header("📊 Compliance Overview & Batch Delete")
+    st.header("📊 Compliance Overview & Batch Actions")
     df = pd.read_sql("SELECT * FROM companies", engine)
     
     if not df.empty:
-        # 新增選取欄位
-        df.insert(0, "Select", False)
+        # 使用 Session State 來管理選取狀態 (若需要 Select All 掣)
+        if 'selected_all' not in st.session_state:
+            st.session_state.selected_all = False
+
+        # 工具列
+        col_t1, col_t2, col_t3 = st.columns([2, 2, 8])
+        if col_t1.button("🔄 Refresh Data"):
+            st.rerun()
+        if col_t2.button("🧹 Clear Selection"):
+            st.session_state.selected_all = False
+            st.rerun()
+            
+        st.info("💡 提示：撳表格左上角嘅 Checkbox 可以一次過「全選」或「取消全選」。")
+
+        # 準備表格數據
+        df.insert(0, "Select", st.session_state.selected_all)
         
-        # 顯示可編輯表格 (用於選擇)
         edited_df = st.data_editor(
             df,
-            column_config={"Select": st.column_config.CheckboxColumn(required=True)},
+            column_config={"Select": st.column_config.CheckboxColumn("Select", default=False)},
             disabled=[c for c in df.columns if c != "Select"],
             hide_index=True,
-            use_container_width=True
+            use_container_width=True,
+            key="dashboard_editor"
         )
         
+        # 獲取被選中的行
         selected_rows = edited_df[edited_df["Select"] == True]
         
         if len(selected_rows) > 0:
-            st.warning(f"Selected {len(selected_rows)} companies for deletion.")
-            with st.popover("🚨 BATCH DELETE"):
-                st.write("Are you sure? This cannot be undone.")
-                if st.button("🔥 YES, DELETE SELECTED"):
+            st.warning(f"已選取 {len(selected_rows)} 間公司。")
+            col_d1, col_d2 = st.columns([3, 7])
+            with col_d1.popover("🚨 BATCH DELETE"):
+                st.write(f"確認刪除選中的 {len(selected_rows)} 筆紀錄？此動作無法撤銷。")
+                if st.button("🔥 確認永久刪除"):
                     names_to_delete = selected_rows["name_en"].tolist()
-                    new_df = df[~df["name_en"].isin(names_to_delete)].drop(columns=["Select"])
+                    # 重新從資料庫讀取並過濾
+                    latest_df = pd.read_sql("SELECT * FROM companies", engine)
+                    new_df = latest_df[~latest_df["name_en"].isin(names_to_delete)]
                     new_df.to_sql('companies', engine, if_exists='replace', index=False)
-                    st.success(f"Deleted {len(selected_rows)} records!")
+                    st.success(f"成功刪除 {len(selected_rows)} 筆資料！")
                     st.rerun()
     else:
-        st.info("No records found.")
+        st.info("現時資料庫內無任何紀錄。")
 
-# --- 6. Group Management (鎖定 V28) ---
+# --- 6. Group Management ---
 elif choice == "⚙️ Group Management":
     st.header("⚙️ Client Group Management")
     new_g = st.text_input("Group Name to Add")
