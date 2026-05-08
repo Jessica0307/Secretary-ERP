@@ -36,7 +36,7 @@ if choice == "⚙️ Group Management":
                 new_df.to_sql('client_groups', engine, if_exists='replace', index=False)
                 st.rerun()
 
-# --- 4. Company Register (必填功能全開) ---
+# --- 4. Company Register (加入動態必填邏輯) ---
 elif choice == "🏢 Company Register":
     st.header("🏢 Company Records Management")
     mode = st.radio("Mode", ["🆕 Add New", "✏️ Edit Existing", "📋 Copy Existing"], horizontal=True)
@@ -72,7 +72,6 @@ elif choice == "🏢 Company Register":
 
     st.markdown("### General Information")
     
-    # 輔助函數：紅色警告標題
     def red_label(text, value):
         if not value or str(value).strip() == "" or value is None:
             return f":red[⚠️ {text} (Required!)]"
@@ -85,12 +84,15 @@ elif choice == "🏢 Company Register":
     name_ch = col2.text_input(red_label("Company Chinese Name", d['ch']), value=d['ch'])
     
     col3, col4 = st.columns(2)
-    # 註冊日期加入必填標籤
     inc_date = col3.date_input(red_label("Date of Incorporation", d['idate']), value=d['idate'])
     
     places = ["", "HK", "BVI", "Cayman Island", "Others"]
     inc_place = col4.selectbox(red_label("Place of Incorporation", d['place']), places, index=places.index(d['place']) if d['place'] in places else 0)
-    place_others = st.text_input("Specify Country", value=d['p_oth']) if inc_place == "Others" else ""
+    
+    # 動態檢查 Others 國家
+    place_others = ""
+    if inc_place == "Others":
+        place_others = st.text_input(red_label("Specify Country", d['p_oth']), value=d['p_oth'])
 
     st.write("---")
     col_ci, col_br = st.columns(2)
@@ -136,7 +138,7 @@ elif choice == "🏢 Company Register":
     st.write("---")
     dis_date = st.date_input("Company Dissolution Date", value=d['dis'])
     
-    # 必填驗證
+    # 必填驗證邏輯
     required_fields = {
         "Client Group": client_group, "English Name": name_en, "Chinese Name": name_ch,
         "Incorporation Date": inc_date, "Incorporation Place": inc_place, 
@@ -144,6 +146,10 @@ elif choice == "🏢 Company Register":
         "Registered Address": reg_addr, "Correspondence Address": corres_addr,
         "Round Chop Location": round_l, "Signature Chop Location": sign_l, "Common Seal Location": common_l
     }
+    
+    # 如果選了 Others，額外檢查 Specify Country
+    if inc_place == "Others":
+        required_fields["Specify Country"] = place_others
 
     def check_fields():
         empty = [k for k, v in required_fields.items() if not v or str(v).strip() == "" or v is None]
