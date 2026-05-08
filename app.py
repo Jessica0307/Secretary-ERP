@@ -16,7 +16,7 @@ except:
 st.set_page_config(page_title="ERP Cloud V34", layout="wide")
 choice = st.sidebar.radio("Navigation", ["📊 Dashboard", "🏢 Company Register", "⚙️ Group Management", "📤 Data Exchange"])
 
-# 定義必填欄位 (用於上傳驗證)
+# 定義必填欄位
 REQUIRED_COLS = ["client_group", "name_en", "name_ch", "incorp_date", "incorp_place", "ci_no", "br_no", "co_type", "reg_addr", "corres_addr", "round_loc", "sign_loc", "seal_loc"]
 
 # --- 3. Data Exchange (鎖定 V28 邏輯) ---
@@ -108,28 +108,29 @@ elif choice == "🏢 Company Register":
                 up_r = {'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no, 'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr, 'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l, 'nd2a_eff_date': n2e, 'nd2a_file_date': n2f, 'nd4_eff_date': n4e, 'nd4_file_date': n4f, 'dissolution_date': dis_date}
                 pd.concat([df_f, pd.DataFrame([up_r])], ignore_index=True).to_sql('companies', engine, if_exists='replace', index=False); st.success("Updated!"); st.rerun()
 
-# --- 5. Dashboard (批量操作優化) ---
+# --- 5. Dashboard (實體全選按鈕版) ---
 elif choice == "📊 Dashboard":
     st.header("📊 Compliance Overview & Batch Actions")
     df = pd.read_sql("SELECT * FROM companies", engine)
     
     if not df.empty:
-        # 使用 Session State 來管理選取狀態 (若需要 Select All 掣)
-        if 'selected_all' not in st.session_state:
-            st.session_state.selected_all = False
+        # 管理 Session State
+        if 'select_state' not in st.session_state:
+            st.session_state.select_state = False
 
         # 工具列
-        col_t1, col_t2, col_t3 = st.columns([2, 2, 8])
-        if col_t1.button("🔄 Refresh Data"):
+        col_t1, col_t2, col_t3, col_t4 = st.columns([2, 2, 2, 6])
+        if col_t1.button("🔄 Refresh"):
             st.rerun()
-        if col_t2.button("🧹 Clear Selection"):
-            st.session_state.selected_all = False
+        if col_t2.button("✅ Select All"):
+            st.session_state.select_state = True
+            st.rerun()
+        if col_t3.button("🧹 Clear All"):
+            st.session_state.select_state = False
             st.rerun()
             
-        st.info("💡 提示：撳表格左上角嘅 Checkbox 可以一次過「全選」或「取消全選」。")
-
         # 準備表格數據
-        df.insert(0, "Select", st.session_state.selected_all)
+        df.insert(0, "Select", st.session_state.select_state)
         
         edited_df = st.data_editor(
             df,
@@ -137,27 +138,22 @@ elif choice == "📊 Dashboard":
             disabled=[c for c in df.columns if c != "Select"],
             hide_index=True,
             use_container_width=True,
-            key="dashboard_editor"
+            key="dashboard_editor_v31"
         )
         
-        # 獲取被選中的行
         selected_rows = edited_df[edited_df["Select"] == True]
         
         if len(selected_rows) > 0:
-            st.warning(f"已選取 {len(selected_rows)} 間公司。")
-            col_d1, col_d2 = st.columns([3, 7])
-            with col_d1.popover("🚨 BATCH DELETE"):
-                st.write(f"確認刪除選中的 {len(selected_rows)} 筆紀錄？此動作無法撤銷。")
-                if st.button("🔥 確認永久刪除"):
-                    names_to_delete = selected_rows["name_en"].tolist()
-                    # 重新從資料庫讀取並過濾
-                    latest_df = pd.read_sql("SELECT * FROM companies", engine)
-                    new_df = latest_df[~latest_df["name_en"].isin(names_to_delete)]
-                    new_df.to_sql('companies', engine, if_exists='replace', index=False)
-                    st.success(f"成功刪除 {len(selected_rows)} 筆資料！")
-                    st.rerun()
+            st.warning(f"Selected: {len(selected_rows)} records.")
+            with st.popover("🚨 BATCH DELETE"):
+                st.write(f"Delete these {len(selected_rows)} companies?")
+                if st.button("🔥 YES, CONFIRM"):
+                    to_del = selected_rows["name_en"].tolist()
+                    latest = pd.read_sql("SELECT * FROM companies", engine)
+                    latest[~latest["name_en"].isin(to_del)].to_sql('companies', engine, if_exists='replace', index=False)
+                    st.success("Deleted!"); st.rerun()
     else:
-        st.info("現時資料庫內無任何紀錄。")
+        st.info("No records.")
 
 # --- 6. Group Management ---
 elif choice == "⚙️ Group Management":
@@ -172,7 +168,6 @@ elif choice == "⚙️ Group Management":
     g_df = pd.read_sql("SELECT * FROM client_groups", engine)
     if not g_df.empty:
         target_g = st.selectbox("Select Group", g_df['group_name'].tolist())
-        with st.popover("🗑️ Delete Group"):
-            if st.button("Confirm Delete Group"):
-                g_df[g_df['group_name'] != target_g].to_sql('client_groups', engine, if_exists='replace', index=False)
-                st.rerun()
+        if st.button("Confirm Delete Group"):
+            g_df[g_df['group_name'] != target_g].to_sql('client_groups', engine, if_exists='replace', index=False)
+            st.rerun()
