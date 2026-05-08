@@ -14,13 +14,13 @@ except:
     st.stop()
 
 # --- 2. Navigation ---
-st.set_page_config(page_title="ERP Cloud V34", layout="wide")
+st.set_page_config(page_title="ERP Cloud V35", layout="wide")
 choice = st.sidebar.radio("Navigation", ["📊 Dashboard", "🏢 Company Register", "⚙️ Group Management", "📤 Data Exchange"])
 
 # 定義必填欄位 (用於上傳驗證)
 REQUIRED_COLS = ["client_group", "name_en", "name_ch", "incorp_date", "incorp_place", "ci_no", "br_no", "co_type", "reg_addr", "corres_addr", "round_loc", "sign_loc", "seal_loc"]
 
-# --- PDF 生成函式 (專業美化版) ---
+# --- PDF 生成函式 (維持專業排版) ---
 def generate_custom_pdf(selected_df):
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     html_content = f"""
@@ -69,7 +69,7 @@ def generate_custom_pdf(selected_df):
     html_content += "</body></html>"
     return HTML(string=html_content).write_pdf()
 
-# --- 3. Data Exchange (回歸 V32 邏輯) ---
+# --- 3. Data Exchange (鎖定) ---
 if choice == "📤 Data Exchange":
     st.header("📤 Data Exchange & Backup")
     st.subheader("1. Download & Backup")
@@ -103,7 +103,7 @@ if choice == "📤 Data Exchange":
                 st.success("✅ Uploaded!"); st.rerun()
         except Exception as e: st.error(f"Error: {e}")
 
-# --- 4. Company Register (回歸 V32 邏輯 + 強化刪除確認) ---
+# --- 4. Company Register (鎖定 V32) ---
 elif choice == "🏢 Company Register":
     st.header("🏢 Company Records Management")
     mode = st.radio("Mode", ["🆕 Add New", "✏️ Edit Existing", "📋 Copy Existing"], horizontal=True)
@@ -159,49 +159,56 @@ elif choice == "🏢 Company Register":
                 df_all[df_all['name_en'] != target_name].to_sql('companies', engine, if_exists='replace', index=False)
                 st.warning(f"{target_name} deleted."); st.rerun()
 
-# --- 5. Dashboard (核心功能：支援自選導出 PDF) ---
+# --- 5. Dashboard (新增 Group 篩選連動) ---
 elif choice == "📊 Dashboard":
     st.header("📊 Compliance Overview & Batch Actions")
-    df = pd.read_sql("SELECT * FROM companies", engine)
+    df_raw = pd.read_sql("SELECT * FROM companies", engine)
+    groups = pd.read_sql("SELECT group_name FROM client_groups", engine)['group_name'].tolist()
     
-    if not df.empty:
+    if not df_raw.empty:
+        # --- 工具列 A: 篩選與基本操作 ---
+        t1, t2, t3, t4 = st.columns([3, 2, 2, 5])
+        filter_g = t1.selectbox("🔍 Filter by Group", ["All Groups"] + groups)
+        
+        if t2.button("🔄 Refresh"): st.rerun()
+        
+        # 執行篩選
+        df_filtered = df_raw if filter_g == "All Groups" else df_raw[df_raw['client_group'] == filter_g]
+        
+        # 批量選取狀態管理
         if 'select_state' not in st.session_state: st.session_state.select_state = False
-        t1, t2, t3, t4 = st.columns([2, 2, 2, 6])
-        if t1.button("🔄 Refresh"): st.rerun()
-        if t2.button("✅ Select All"): st.session_state.select_state = True; st.rerun()
-        if t3.button("🧹 Clear All"): st.session_state.select_state = False; st.rerun()
-            
-        df.insert(0, "Select", st.session_state.select_state)
-        # 允許表格自帶篩選功能 (用戶可自行 filter Group)
-        edited_df = st.data_editor(df, column_config={"Select": st.column_config.CheckboxColumn("Select", default=False)}, disabled=[c for c in df.columns if c != "Select"], hide_index=True, use_container_width=True, key="dashboard_editor_v34")
+        if t3.button("✅ Select All Shown"): st.session_state.select_state = True; st.rerun()
+        if t4.button("🧹 Clear All"): st.session_state.select_state = False; st.rerun()
+
+        # 顯示表格
+        df_display = df_filtered.copy()
+        df_display.insert(0, "Select", st.session_state.select_state)
+        
+        edited_df = st.data_editor(df_display, column_config={"Select": st.column_config.CheckboxColumn("Select", default=False)}, disabled=[c for c in df_display.columns if c != "Select"], hide_index=True, use_container_width=True, key="dashboard_editor_v35")
         
         selected_rows = edited_df[edited_df["Select"] == True]
         
+        # --- 工具列 B: 批量動作 ---
         if len(selected_rows) > 0:
             st.info(f"已選取 {len(selected_rows)} 筆紀錄")
-            
-            # 操作工具列
             act1, act2 = st.columns([3, 7])
             
-            # --- 功能 A: 導出 PDF (僅選中項) ---
             with act1:
                 if st.button("📥 Export Selected to PDF"):
                     pdf_bytes = generate_custom_pdf(selected_rows)
-                    st.download_button(label="Click to Download PDF", data=pdf_bytes, file_name=f"Selected_Companies_{datetime.now().strftime('%Y%m%d')}.pdf", mime="application/pdf")
+                    st.download_button(label="Click to Download PDF", data=pdf_bytes, file_name=f"Selected_Report_{datetime.now().strftime('%Y%m%d')}.pdf", mime="application/pdf")
             
-            # --- 功能 B: 批量刪除 (鎖定 V32 邏輯) ---
             with act2.popover("🧨 CRITICAL: BATCH DELETE"):
                 st.error("### 🛑 DANGER ZONE")
-                st.write(f"這將永久刪除資料庫中選中的 **{len(selected_rows)}** 筆紀錄。")
+                st.write(f"這將永久刪除選中的 **{len(selected_rows)}** 筆紀錄。")
                 user_conf = st.text_input(f"請輸入 **DELETE** 確認", key="batch_del_input")
                 if st.button("🔥 確認永久刪除", disabled=(user_conf != "DELETE")):
                     to_del = selected_rows["name_en"].tolist()
-                    latest = pd.read_sql("SELECT * FROM companies", engine)
-                    latest[~latest["name_en"].isin(to_del)].to_sql('companies', engine, if_exists='replace', index=False)
-                    st.success(f"已清理 {len(selected_rows)} 筆紀錄！"); st.rerun()
+                    df_raw[~df_raw["name_en"].isin(to_del)].to_sql('companies', engine, if_exists='replace', index=False)
+                    st.success("已清理紀錄！"); st.rerun()
     else: st.info("No records.")
 
-# --- 6. Group Management (鎖定 V32 邏輯) ---
+# --- 6. Group Management (鎖定 V32) ---
 elif choice == "⚙️ Group Management":
     st.header("⚙️ Client Group Management")
     new_g = st.text_input("Group Name to Add")
