@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 import io
 from weasyprint import HTML
 
-# --- 1. Database Connection ---
+# --- 1. Database Connection (鎖定) ---
 try:
     DB_URL = st.secrets["DB_URL"]
     engine = create_engine(DB_URL)
@@ -14,10 +14,10 @@ except:
     st.stop()
 
 # --- 2. Navigation ---
-st.set_page_config(page_title="ERP Cloud V69", layout="wide")
+st.set_page_config(page_title="ERP Cloud V70", layout="wide")
 choice = st.sidebar.radio("Navigation", ["📊 Dashboard", "🏢 Company Register", "⚙️ Group Management", "📤 Data Exchange"])
 
-# --- 3. PDF 生成函式 (鎖定：1:1 樣式 + 法定申報置底) ---
+# --- 3. PDF 生成函式 (鎖定：視覺還原 + 法定申報置底 + 一公司一頁) ---
 def generate_custom_pdf(selected_df):
     now = datetime.now().strftime("%Y/%m/%d %H:%M")
     def fmt_date(val):
@@ -93,27 +93,28 @@ def generate_custom_pdf(selected_df):
     html_content += "</td></tr></tbody></table></body></html>"
     return HTML(string=html_content).write_pdf()
 
-# --- 4. Dashboard (鎖定掣位佈局) ---
+# --- 4. Dashboard (鎖定掣位同一行) ---
 if choice == "📊 Dashboard":
     st.header("📊 Compliance Overview")
     df_raw = pd.read_sql("SELECT * FROM companies", engine)
     groups = pd.read_sql("SELECT group_name FROM client_groups", engine)['group_name'].tolist()
     if not df_raw.empty:
         t1, t2, t3, t4 = st.columns([3, 2, 2, 5])
-        filter_g = t1.selectbox("🔍 Filter", ["All Groups"] + groups)
+        filter_g = t1.selectbox("🔍 Filter by Group", ["All Groups"] + groups)
         if t2.button("🔄 Refresh"): st.rerun()
         df_filtered = df_raw if filter_g == "All Groups" else df_raw[df_raw['client_group'] == filter_g]
         
-        if 'sel_v69' not in st.session_state: st.session_state.sel_v69 = False
-        if t3.button("✅ Select All"): st.session_state.sel_v69 = True; st.rerun()
-        if t4.button("🧹 Clear All"): st.session_state.sel_v69 = False; st.rerun()
+        if 'sel_v70' not in st.session_state: st.session_state.sel_v70 = False
+        if t3.button("✅ Select All"): st.session_state.sel_v70 = True; st.rerun()
+        if t4.button("🧹 Clear All"): st.session_state.sel_v70 = False; st.rerun()
         
         df_display = df_filtered.copy()
-        for col in ["incorp_date", "nd2a_eff_date", "nd4_eff_date"]:
+        date_cols = ["incorp_date", "nd2a_eff_date", "nd4_eff_date"]
+        for col in date_cols:
             if col in df_display.columns: df_display[col] = pd.to_datetime(df_display[col], errors='coerce').dt.date
-        df_display.insert(0, "Select", st.session_state.sel_v69)
+        df_display.insert(0, "Select", st.session_state.sel_v70)
         
-        edit_df = st.data_editor(df_display, column_config={"Select": st.column_config.CheckboxColumn("Select", default=False)}, hide_index=True, use_container_width=True, key="dash_v69")
+        edit_df = st.data_editor(df_display, column_config={"Select": st.column_config.CheckboxColumn("Select", default=False)}, hide_index=True, use_container_width=True, key="dash_v70")
         selected = edit_df[edit_df["Select"] == True]
         
         if len(selected) > 0:
@@ -121,14 +122,14 @@ if choice == "📊 Dashboard":
             with act1:
                 if st.button("📥 Export Selected PDF"):
                     final_data = df_raw[df_raw['name_en'].isin(selected['name_en'])]
-                    st.download_button(label="Download Now", data=generate_custom_pdf(final_data), file_name="Report.pdf", mime="application/pdf")
+                    st.download_button(label="Download PDF Now", data=generate_custom_pdf(final_data), file_name="Report.pdf", mime="application/pdf")
             with act2.popover("🧨 BATCH DELETE"):
-                st.error("🛑 DANGER ZONE"); conf = st.text_input("Type DELETE to confirm", key="batch_del_v69")
-                if st.button("🔥 Confirm Batch Delete", disabled=(conf != "DELETE")):
+                st.error("🛑 DANGER ZONE"); conf_b = st.text_input("Type DELETE to confirm", key="batch_del_v70")
+                if st.button("🔥 Confirm Batch Delete", disabled=(conf_b != "DELETE")):
                     df_raw[~df_raw["name_en"].isin(selected["name_en"].tolist())].to_sql('companies', engine, if_exists='replace', index=False); st.rerun()
     else: st.info("No records.")
 
-# --- 5. Company Register (維持紅字 Deadline) ---
+# --- 5. Company Register (還原 Subheader 結構 + 補回解散日期 + 紅字 Deadline) ---
 elif choice == "🏢 Company Register":
     st.header("🏢 Company Records Management")
     mode = st.radio("Mode", ["🆕 Add New", "✏️ Edit Existing", "📋 Copy Existing"], horizontal=True)
@@ -146,6 +147,7 @@ elif choice == "🏢 Company Register":
 
     def rl(text, value): return f":red[⚠️ {text} (Required!)]" if not value or str(value).strip() == "" or value is None else text
 
+    # --- Registration Section ---
     client_group = st.selectbox(rl("Group", d['cg']), [""] + groups, index=(groups.index(d['cg'])+1 if d['cg'] in groups else 0))
     c1, c2 = st.columns(2)
     name_en = c1.text_input(rl("English Name", d['en']), value=d['en'])
@@ -159,56 +161,71 @@ elif choice == "🏢 Company Register":
     co_type = st.selectbox(rl("Company Type", d['type']), ["", "Private Company", "Public Company", "Guarantee"], index=(["", "Private Company", "Public Company", "Guarantee"].index(d['type']) if d['type'] in ["", "Private Company", "Public Company", "Guarantee"] else 0))
     st.write("---")
 
-    # ND2A & ND4 (日期紅字鎖定)
+    # --- ND2A & ND4 Section (紅字 Deadline 鎖定) ---
     st.subheader("📝 Company Secretary Appointment (ND2A)")
     cc1, cc2, cc3, cc4 = st.columns([3, 3, 3, 1])
     n2e = cc1.date_input("Effective Date (Appt)", value=d['n2e']); n2f = cc2.date_input("Filing Date (ND2A)", value=d['n2f'])
     n2_dl = (n2e + timedelta(days=15)) if n2e else ''
     cc3.info(f"Statutory Period: 15 days\n\n**Deadline: :red[{n2_dl}]**")
-    n2d = cc4.checkbox("Downloaded", value=d['n2d'], key="n2d_v69")
+    n2d = cc4.checkbox("Downloaded", value=d['n2d'], key="n2d_v70")
     
     st.subheader("📝 Company Secretary Resignation (ND4)")
     cc5, cc6, cc7, cc8 = st.columns([3, 3, 3, 1])
     n4e = cc5.date_input("Effective Date (Resign)", value=d['n4e']); n4f = cc6.date_input("Filing Date (ND4)", value=d['n4f'])
     n4_dl = (n4e + timedelta(days=15)) if n4e else ''
     cc7.info(f"Statutory Period: 15 days\n\n**Deadline: :red[{n4_dl}]**")
-    n4d = cc8.checkbox("Downloaded", value=d['n4d'], key="n4d_v69")
+    n4d = cc8.checkbox("Downloaded", value=d['n4d'], key="n4d_v70")
     st.write("---")
 
-    st.subheader("📍 Address & Seal")
+    # --- Address & Storage Section (還原分開 Subheader) ---
+    st.subheader("📍 Address & Contact")
     ca1, ca2 = st.columns(2)
     reg_addr = ca1.text_area(rl("Registered Office Address", d['ra']), value=d['ra'])
     corres_addr = ca2.text_area(rl("Correspondence Address", d['ca']), value=d['ca'])
+    
+    st.subheader("📔 Seal Storage")
     l1, l2, l3 = st.columns(3)
     round_l = l1.text_input(rl("Round Chop Location", d['rl']), value=d['rl'])
     sign_l = l2.text_input(rl("Signature Chop Location", d['sl']), value=d['sl'])
     common_l = l3.text_input(rl("Common Seal Location", d['cl']), value=d['cl'])
+    
+    # 補回漏掉的 Dissolution Date
+    st.write("---")
+    dis_date = st.date_input("Company Dissolution Date", value=d['dis'])
 
-    row_data = {'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no, 'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr, 'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l, 'nd2a_eff_date': n2e, 'nd2a_file_date': n2f, 'nd2a_download': n2d, 'nd4_eff_date': n4e, 'nd4_file_date': n4f, 'nd4_download': n4d, 'dissolution_date': d['dis']}
+    # --- Update / Save Logic (鎖定) ---
+    row_data = {'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no, 'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr, 'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l, 'nd2a_eff_date': n2e, 'nd2a_file_date': n2f, 'nd2a_download': n2d, 'nd4_eff_date': n4e, 'nd4_file_date': n4f, 'nd4_download': n4d, 'dissolution_date': dis_date}
 
     if mode in ["🆕 Add New", "📋 Copy Existing"]:
-        if st.button("💾 Save"): pd.DataFrame([row_data]).to_sql('companies', engine, if_exists='append', index=False); st.rerun()
+        with st.popover("💾 Save To Cloud"):
+            if st.button("Confirm Save"): pd.DataFrame([row_data]).to_sql('companies', engine, if_exists='append', index=False); st.rerun()
     else:
-        u, dl = st.columns(2)
-        with u.popover("🆙 Update"):
+        u_col, d_col = st.columns(2)
+        with u_col.popover("🆙 Update Record"):
             if st.button("Confirm Update"):
                 df_all[df_all['name_en'] != target_name].to_sql('companies', engine, if_exists='replace', index=False)
                 pd.DataFrame([row_data]).to_sql('companies', engine, if_exists='append', index=False); st.rerun()
-        with dl.popover("🚨 DELETE"):
-            st.error(f"Delete {target_name}?"); conf_s = st.text_input("Type DELETE", key="single_del_v69")
+        with d_col.popover("🚨 DELETE Record"):
+            st.error(f"Delete {target_name}?"); conf_s = st.text_input("Type DELETE", key="single_del_v70")
             if st.button("Confirm Delete Now", disabled=(conf_s != "DELETE")):
                 df_all[df_all['name_en'] != target_name].to_sql('companies', engine, if_exists='replace', index=False); st.rerun()
 
 # --- 6. Group Management ---
 elif choice == "⚙️ Group Management":
     st.header("⚙️ Group Management")
-    new_g = st.text_input("New Name")
+    new_g = st.text_input("New Group Name")
     if st.button("Add"): pd.DataFrame([{'group_name': new_g}]).to_sql('client_groups', engine, if_exists='append', index=False); st.rerun()
+    g_df = pd.read_sql("SELECT * FROM client_groups", engine)
+    if not g_df.empty:
+        target = st.selectbox("Select Group", g_df['group_name'].tolist())
+        with st.popover("🗑️ Delete"):
+            st.error(f"Delete {target}?"); conf_g = st.text_input("Type DELETE")
+            if st.button("Confirm", disabled=(conf_g != "DELETE")):
+                g_df[g_df['group_name'] != target].to_sql('client_groups', engine, if_exists='replace', index=False); st.rerun()
 
-# --- 7. Data Exchange (【核心修正】：恢復日期轉換與排版) ---
+# --- 7. Data Exchange (鎖定日期轉換與雙欄標題) ---
 elif choice == "📤 Data Exchange":
     st.header("📤 Data Exchange & Backup")
-    
     st.subheader("1. Download & Backup")
     c1, c2 = st.columns(2)
     template_cols = ["client_group", "name_en", "name_ch", "incorp_date", "incorp_place", "incorp_place_others", "ci_no", "br_no", "co_type", "reg_addr", "corres_addr", "round_loc", "sign_loc", "seal_loc", "nd2a_eff_date", "nd2a_file_date", "nd2a_download", "nd4_eff_date", "nd4_file_date", "nd4_download", "dissolution_date"]
@@ -221,19 +238,12 @@ elif choice == "📤 Data Exchange":
     
     st.write("---")
     st.subheader("2. Upload & Bulk Import")
-    up = st.file_uploader("Upload Excel File (.xlsx)", type=["xlsx"])
-    if up:
-        if st.button("🚀 Confirm Bulk Upload"):
-            try:
-                up_df = pd.read_excel(up, engine='openpyxl', keep_default_na=False)
-                # --- 【關鍵恢復】：日期欄位轉換，避免格式崩潰 ---
-                date_cols = ["incorp_date", "nd2a_eff_date", "nd2a_file_date", "nd4_eff_date", "nd4_file_date", "dissolution_date"]
-                for col in date_cols:
-                    if col in up_df.columns:
-                        up_df[col] = pd.to_datetime(up_df[col], errors='coerce')
-                
-                up_df.to_sql('companies', engine, if_exists='append', index=False)
-                st.success("✅ Uploaded Successfully!")
-                st.balloons()
-            except Exception as e:
-                st.error(f"Upload Error: {e}")
+    up = st.file_uploader("Upload Excel File", type=["xlsx"])
+    if up and st.button("🚀 Confirm Bulk Upload"):
+        try:
+            up_df = pd.read_excel(up, engine='openpyxl', keep_default_na=False)
+            for col in ["incorp_date", "nd2a_eff_date", "nd2a_file_date", "nd4_eff_date", "nd4_file_date", "dissolution_date"]:
+                if col in up_df.columns: up_df[col] = pd.to_datetime(up_df[col], errors='coerce')
+            up_df.to_sql('companies', engine, if_exists='append', index=False)
+            st.success("✅ Uploaded Successfully!"); st.balloons()
+        except Exception as e: st.error(f"Error: {e}")
