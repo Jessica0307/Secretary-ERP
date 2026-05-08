@@ -36,7 +36,7 @@ if choice == "⚙️ Group Management":
                 new_df.to_sql('client_groups', engine, if_exists='replace', index=False)
                 st.rerun()
 
-# --- 4. Company Register (加入必填限制與空白選單) ---
+# --- 4. Company Register (紅色動態必填提醒) ---
 elif choice == "🏢 Company Register":
     st.header("🏢 Company Records Management")
     mode = st.radio("Mode", ["🆕 Add New", "✏️ Edit Existing", "📋 Copy Existing"], horizontal=True)
@@ -71,26 +71,32 @@ elif choice == "🏢 Company Register":
                 d['ch'] = ""
 
     st.markdown("### General Information")
-    client_group = st.selectbox("Select Client Group", [""] + groups, index=(groups.index(d['cg'])+1 if d['cg'] in groups else 0))
+    
+    # --- 動態標題輔助函數 ---
+    def red_label(text, value):
+        if not value or str(value).strip() == "":
+            return f":red[⚠️ {text} (Required!)]"
+        return text
+
+    client_group = st.selectbox(red_label("Select Client Group", d['cg']), [""] + groups, index=(groups.index(d['cg'])+1 if d['cg'] in groups else 0))
+    
     col1, col2 = st.columns(2)
-    name_en = col1.text_input("Company English Name", value=d['en'])
-    name_ch = col2.text_input("Company Chinese Name", value=d['ch'])
+    name_en = col1.text_input(red_label("Company English Name", d['en']), value=d['en'])
+    name_ch = col2.text_input(red_label("Company Chinese Name", d['ch']), value=d['ch'])
+    
     col3, col4 = st.columns(2)
     inc_date = col3.date_input("Date of Incorporation", value=d['idate'])
-    
-    # 註冊地 default 改為空白
     places = ["", "HK", "BVI", "Cayman Island", "Others"]
-    inc_place = col4.selectbox("Place of Incorporation", places, index=places.index(d['place']) if d['place'] in places else 0)
+    inc_place = col4.selectbox(red_label("Place of Incorporation", d['place']), places, index=places.index(d['place']) if d['place'] in places else 0)
     place_others = st.text_input("Specify Country", value=d['p_oth']) if inc_place == "Others" else ""
 
     st.write("---")
     col_ci, col_br = st.columns(2)
-    ci_no = col_ci.text_input("CI Number", value=d['ci'])
-    br_no = col_br.text_input("BR Number", value=d['br'])
+    ci_no = col_ci.text_input(red_label("CI Number", d['ci']), value=d['ci'])
+    br_no = col_br.text_input(red_label("BR Number", d['br']), value=d['br'])
     
-    # Company Type default 改為空白
     types = ["", "Private Company", "Public Company", "Company Limited by Guarantee"]
-    co_type = st.selectbox("Company Type", types, index=types.index(d['type']) if d['type'] in types else 0)
+    co_type = st.selectbox(red_label("Company Type", d['type']), types, index=types.index(d['type']) if d['type'] in types else 0)
     
     st.write("---")
     st.markdown("### 📝 Company Secretary Appointment (ND2A)")
@@ -116,19 +122,19 @@ elif choice == "🏢 Company Register":
     st.write("---")
     st.markdown("### 📍 Address & Contact")
     col_reg, col_cor = st.columns(2)
-    reg_addr = col_reg.text_area("Registered Office Address", value=d['ra'])
-    corres_addr = col_cor.text_area("Correspondence Address", value=d['ca'])
+    reg_addr = col_reg.text_area(red_label("Registered Office Address", d['ra']), value=d['ra'])
+    corres_addr = col_cor.text_area(red_label("Correspondence Address", d['ca']), value=d['ca'])
     
     st.markdown("### 🗄️ Seal Storage") 
     l1, l2, l3 = st.columns(3)
-    round_l = l1.text_input("Round Chop Location", value=d['rl'])
-    sign_l = l2.text_input("Signature Chop Location", value=d['sl'])
-    common_l = l3.text_input("Common Seal Location", value=d['cl'])
+    round_l = l1.text_input(red_label("Round Chop Location", d['rl']), value=d['rl'])
+    sign_l = l2.text_input(red_label("Signature Chop Location", d['sl']), value=d['sl'])
+    common_l = l3.text_input(red_label("Common Seal Location", d['cl']), value=d['cl'])
     
     st.write("---")
     dis_date = st.date_input("Company Dissolution Date", value=d['dis'])
     
-    # 必填驗證邏輯
+    # 必填驗證清單
     required_fields = {
         "Client Group": client_group, "English Name": name_en, "Chinese Name": name_ch,
         "Incorporation Place": inc_place, "CI No": ci_no, "BR No": br_no,
@@ -139,7 +145,7 @@ elif choice == "🏢 Company Register":
     def check_fields():
         empty = [k for k, v in required_fields.items() if not v or str(v).strip() == ""]
         if empty:
-            st.error(f"❌ 以下項目為必填：{', '.join(empty)}")
+            st.error(f"❌ 以下項目尚未填寫：{', '.join(empty)}")
             return False
         return True
 
