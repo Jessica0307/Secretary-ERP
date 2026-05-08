@@ -14,23 +14,26 @@ except:
     st.stop()
 
 # --- 2. Navigation ---
-st.set_page_config(page_title="ERP Cloud V37", layout="wide")
+st.set_page_config(page_title="ERP Cloud V38", layout="wide")
 choice = st.sidebar.radio("Navigation", ["📊 Dashboard", "🏢 Company Register", "⚙️ Group Management", "📤 Data Exchange"])
 
-# 定義必填欄位 (用於上傳驗證)
+# 定義必填欄位
 REQUIRED_COLS = ["client_group", "name_en", "name_ch", "incorp_date", "incorp_place", "ci_no", "br_no", "co_type", "reg_addr", "corres_addr", "round_loc", "sign_loc", "seal_loc"]
 
-# --- PDF 生成函式 (加入中文字型支援) ---
+# --- PDF 生成函式 (引用網絡字型以解決 Cloud 亂碼) ---
 def generate_custom_pdf(selected_df):
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    
+    # 這裡加入 Google Fonts 的引用，確保 Linux Server 也能顯示中文
     html_content = f"""
     <html>
     <head>
         <meta charset="UTF-8">
+        <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+HK:wght@400;700&display=swap" rel="stylesheet">
         <style>
             @page {{ size: A4; margin: 15mm; }}
             body {{ 
-                font-family: 'Arial', 'Microsoft JhengHei', 'PingFang TC', 'Noto Sans TC', sans-serif; 
+                font-family: 'Noto Sans HK', sans-serif; 
                 color: #2c3e50; line-height: 1.4; 
             }}
             .header {{ text-align: center; border-bottom: 2px solid #34495e; padding-bottom: 10px; margin-bottom: 20px; }}
@@ -44,7 +47,7 @@ def generate_custom_pdf(selected_df):
         </style>
     </head>
     <body>
-        <div class="header"><h1>Corporate Portfolio Report</h1><p>Selected Records: {len(selected_df)} | Generated: {now}</p></div>
+        <div class="header"><h1>Corporate Portfolio Report</h1><p>Generated: {now}</p></div>
     """
     for _, row in selected_df.iterrows():
         html_content += f"""
@@ -102,7 +105,7 @@ if choice == "📤 Data Exchange":
                 st.success("✅ Uploaded!"); st.rerun()
         except Exception as e: st.error(f"Error: {e}")
 
-# --- 4. Company Register ---
+# --- 4. Company Register (維持第 32 版邏輯) ---
 elif choice == "🏢 Company Register":
     st.header("🏢 Company Records Management")
     mode = st.radio("Mode", ["🆕 Add New", "✏️ Edit Existing", "📋 Copy Existing"], horizontal=True)
@@ -122,32 +125,31 @@ elif choice == "🏢 Company Register":
     def red_label(text, value):
         return f":red[⚠️ {text} (Required!)]" if not value or str(value).strip() == "" or value is None else text
 
-    client_group = st.selectbox(red_label("Select Client Group", d['cg']), [""] + groups, index=(groups.index(d['cg'])+1 if d['cg'] in groups else 0))
-    c1, c2 = st.columns(2); name_en = c1.text_input(red_label("EN Name", d['en']), value=d['en']); name_ch = c2.text_input(red_label("CH Name", d['ch']), value=d['ch'])
-    c3, c4 = st.columns(2); inc_date = c3.date_input(red_label("Incorp Date", d['idate']), value=d['idate']); places = ["", "HK", "BVI", "Cayman Island", "Others"]; p_idx = places.index(d['place']) if d['place'] in places else 0; inc_place = c4.selectbox(red_label("Place", d['place']), places, index=p_idx); place_others = st.text_input("Specify", value=d['p_oth']) if inc_place == "Others" else ""
+    client_group = st.selectbox(red_label("Select Group", d['cg']), [""] + groups, index=(groups.index(d['cg'])+1 if d['cg'] in groups else 0))
+    c1, c2 = st.columns(2); n_en = c1.text_input(red_label("EN Name", d['en']), value=d['en']); n_ch = c2.text_input(red_label("CH Name", d['ch']), value=d['ch'])
+    c3, c4 = st.columns(2); i_d = c3.date_input(red_label("Incorp Date", d['idate']), value=d['idate']); ps = ["", "HK", "BVI", "Cayman Island", "Others"]; p_idx = ps.index(d['place']) if d['place'] in ps else 0; i_p = c4.selectbox(red_label("Place", d['place']), ps, index=p_idx); p_o = st.text_input("Specify", value=d['p_oth']) if i_p == "Others" else ""
     st.write("---")
-    ci_no = st.text_input(red_label("CI", d['ci']), value=d['ci']); br_no = st.text_input(red_label("BR", d['br']), value=d['br'])
-    types = ["", "Private Company", "Public Company", "Company Limited by Guarantee"]; t_idx = types.index(d['type']) if d['type'] in types else 0; co_type = st.selectbox(red_label("Type", d['type']), types, index=t_idx)
+    ci = st.text_input(red_label("CI", d['ci']), value=d['ci']); br = st.text_input(red_label("BR", d['br']), value=d['br'])
+    ts = ["", "Private Company", "Public Company", "Company Limited by Guarantee"]; t_idx = ts.index(d['type']) if d['type'] in ts else 0; c_t = st.selectbox(red_label("Type", d['type']), ts, index=t_idx)
     st.write("---")
     cc1, cc2 = st.columns(2); n2e = cc1.date_input("ND2A Eff", value=d['n2e']); n4e = cc2.date_input("ND4 Eff", value=d['n4e'])
     st.write("---")
-    reg_addr = st.text_area(red_label("Reg Addr", d['ra']), value=d['ra']); corres_addr = st.text_area(red_label("Cor Addr", d['ca']), value=d['ca'])
-    l1, l2, l3 = st.columns(3); round_l = l1.text_input(red_label("Round", d['rl']), value=d['rl']); sign_l = l2.text_input(red_label("Sign", d['sl']), value=d['sl']); common_l = l3.text_input(red_label("Common", d['cl']), value=d['cl'])
-    dis_date = st.date_input("Dissolution", value=d['dis'])
+    ra = st.text_area(red_label("Reg Addr", d['ra']), value=d['ra']); ca = st.text_area(red_label("Cor Addr", d['ca']), value=d['ca'])
+    l1, l2, l3 = st.columns(3); r_l = l1.text_input(red_label("Round", d['rl']), value=d['rl']); s_l = l2.text_input(red_label("Sign", d['sl']), value=d['sl']); c_l = l3.text_input(red_label("Common", d['cl']), value=d['cl'])
     
     if mode in ["🆕 Add New", "📋 Copy Existing"]:
-        if st.button("💾 Save Record"):
-            new_r = {'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no, 'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr, 'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l, 'nd2a_eff_date': n2e, 'nd4_eff_date': n4e, 'dissolution_date': dis_date}
+        if st.button("💾 Save"):
+            new_r = {'client_group': client_group, 'name_en': n_en, 'name_ch': n_ch, 'incorp_date': i_d, 'incorp_place': i_p, 'incorp_place_others': p_o, 'ci_no': ci, 'br_no': br, 'co_type': c_t, 'reg_addr': ra, 'corres_addr': ca, 'round_loc': r_l, 'sign_loc': s_l, 'seal_loc': c_l, 'nd2a_eff_date': n2e, 'nd4_eff_date': n4e}
             pd.DataFrame([new_r]).to_sql('companies', engine, if_exists='append', index=False); st.success("Saved!"); st.rerun()
     else:
         cb1, cb2 = st.columns(2)
         with cb1.popover("🆙 Update"):
             if st.button("Confirm Update"):
                 df_f = df_all[df_all['name_en'] != target_name]
-                up_r = {'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no, 'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr, 'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l, 'nd2a_eff_date': n2e, 'nd4_eff_date': n4e, 'dissolution_date': dis_date}
+                up_r = {'client_group': client_group, 'name_en': n_en, 'name_ch': n_ch, 'incorp_date': i_d, 'incorp_place': i_p, 'incorp_place_others': p_o, 'ci_no': ci, 'br_no': br, 'co_type': c_t, 'reg_addr': ra, 'corres_addr': ca, 'round_loc': r_l, 'sign_loc': s_l, 'seal_loc': c_l, 'nd2a_eff_date': n2e, 'nd4_eff_date': n4e}
                 pd.concat([df_f, pd.DataFrame([up_r])], ignore_index=True).to_sql('companies', engine, if_exists='replace', index=False); st.success("Updated!"); st.rerun()
         with cb2.popover("🚨 DELETE"):
-            st.error(f"Delete {target_name}?"); conf = st.text_input("Type DELETE")
+            st.error("Delete?"); conf = st.text_input("Type DELETE")
             if st.button("🔥 Confirm", disabled=(conf != "DELETE")):
                 df_all[df_all['name_en'] != target_name].to_sql('companies', engine, if_exists='replace', index=False); st.rerun()
 
@@ -159,7 +161,7 @@ elif choice == "📊 Dashboard":
     
     if not df_raw.empty:
         t1, t2, t3, t4 = st.columns([3, 2, 2, 5])
-        filter_g = t1.selectbox("🔍 Filter by Group", ["All Groups"] + groups)
+        filter_g = t1.selectbox("🔍 Filter Group", ["All Groups"] + groups)
         if t2.button("🔄 Refresh"): st.rerun()
         
         df_filtered = df_raw if filter_g == "All Groups" else df_raw[df_raw['client_group'] == filter_g]
@@ -171,7 +173,7 @@ elif choice == "📊 Dashboard":
         df_display = df_filtered.copy()
         df_display.insert(0, "Select", st.session_state.select_state)
         
-        edited_df = st.data_editor(df_display, column_config={"Select": st.column_config.CheckboxColumn("Select", default=False)}, disabled=[c for c in df_display.columns if c != "Select"], hide_index=True, use_container_width=True, key="dashboard_editor_v37")
+        edited_df = st.data_editor(df_display, column_config={"Select": st.column_config.CheckboxColumn("Select", default=False)}, disabled=[c for c in df_display.columns if c != "Select"], hide_index=True, use_container_width=True, key="dashboard_editor_v38")
         
         selected_rows = edited_df[edited_df["Select"] == True]
         
@@ -181,10 +183,10 @@ elif choice == "📊 Dashboard":
             with act1:
                 if st.button("📥 Export PDF"):
                     pdf_bytes = generate_custom_pdf(selected_rows)
-                    st.download_button(label="Download PDF", data=pdf_bytes, file_name=f"Report_{datetime.now().strftime('%Y%m%d')}.pdf", mime="application/pdf")
+                    st.download_button(label="Download PDF", data=pdf_bytes, file_name="Report.pdf", mime="application/pdf")
             with act2.popover("🧨 BATCH DELETE"):
-                st.error("DANGER ZONE"); user_conf = st.text_input("Type DELETE to batch purge")
-                if st.button("🔥 PURGE", disabled=(user_conf != "DELETE")):
+                st.error("DANGER"); conf = st.text_input("Type DELETE")
+                if st.button("🔥 PURGE", disabled=(conf != "DELETE")):
                     to_del = selected_rows["name_en"].tolist()
                     df_raw[~df_raw["name_en"].isin(to_del)].to_sql('companies', engine, if_exists='replace', index=False); st.rerun()
     else: st.info("No records.")
@@ -200,6 +202,6 @@ elif choice == "⚙️ Group Management":
     if not g_df.empty:
         target_g = st.selectbox("Select", g_df['group_name'].tolist())
         with st.popover("🗑️ Delete"):
-            conf = st.text_input("Type DELETE to remove group")
-            if st.button("Confirm", disabled=(conf != "DELETE")):
+            c = st.text_input("Type DELETE")
+            if st.button("Confirm", disabled=(c != "DELETE")):
                 g_df[g_df['group_name'] != target_g].to_sql('client_groups', engine, if_exists='replace', index=False); st.rerun()
