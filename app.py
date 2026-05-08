@@ -3,7 +3,7 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 from datetime import datetime, timedelta
 
-# --- 1. Database Connection (保持鎖定) ---
+# --- 1. Database Connection (鎖定) ---
 try:
     DB_URL = st.secrets["DB_URL"]
     engine = create_engine(DB_URL)
@@ -11,7 +11,7 @@ except:
     st.error("❌ Please check DB_URL in Secrets")
     st.stop()
 
-# --- 2. Navigation (保持 V34 佈局鎖定) ---
+# --- 2. Navigation (LOCK V34 Layout) ---
 st.set_page_config(page_title="ERP Cloud V34", layout="wide")
 choice = st.sidebar.radio("Navigation", ["📊 Dashboard", "🏢 Company Register", "⚙️ Group Management"])
 
@@ -36,42 +36,42 @@ if choice == "⚙️ Group Management":
                 new_df.to_sql('client_groups', engine, if_exists='replace', index=False)
                 st.rerun()
 
-# --- 4. Company Register (加入 Copy 選項，排版絕對鎖定) ---
+# --- 4. Company Register (優化 Copy 邏輯) ---
 elif choice == "🏢 Company Register":
     st.header("🏢 Company Records Management")
-    
-    # 這裡加入 "📋 Copy Existing" 選項
     mode = st.radio("Mode", ["🆕 Add New", "✏️ Edit Existing", "📋 Copy Existing"], horizontal=True)
     
     df_all = pd.read_sql("SELECT * FROM companies", engine)
     groups = pd.read_sql("SELECT group_name FROM client_groups", engine)['group_name'].tolist()
     
+    # 預設空白資料
     d = {'cg': "", 'en': "", 'ch': "", 'idate': None, 'place': "HK", 'p_oth': "", 'ci': "", 'br': "", 'type': "Private Company", 'ra': "", 'ca': "", 'rl': "", 'sl': "", 'cl': "", 'n2e': None, 'n2f': None, 'n2d': False, 'n4e': None, 'n4f': None, 'n4d': False, 'dis': None}
     target_name = None
 
-    # 修改與複製的讀取邏輯
     if mode in ["✏️ Edit Existing", "📋 Copy Existing"] and not df_all.empty:
+        # 加一個空白選項 [""]，避免自動填入第一間
+        comp_list = [""] + df_all['name_en'].tolist()
         label = "Select Company to Edit" if mode == "✏️ Edit Existing" else "Select Company to Copy From"
-        target_name = st.selectbox(label, df_all['name_en'].tolist())
-        row = df_all[df_all['name_en'] == target_name].iloc[0]
+        target_name = st.selectbox(label, comp_list)
         
-        d = {
-            'cg': row.get('client_group', ""), 'en': row.get('name_en', ""), 'ch': row.get('name_ch', ""), 
-            'idate': row.get('incorp_date'), 'place': row.get('incorp_place', "HK"), 
-            'p_oth': row.get('incorp_place_others', ""), 'ci': row.get('ci_no', ""), 'br': row.get('br_no', ""), 
-            'type': row.get('co_type', "Private Company"), 'ra': row.get('reg_addr', ""), 'ca': row.get('corres_addr', ""),
-            'rl': row.get('round_loc', ""), 'sl': row.get('sign_loc', ""), 'cl': row.get('seal_loc', ""),
-            'n2e': row.get('nd2a_eff_date'), 'n2f': row.get('nd2a_file_date'), 
-            'n2d': str(row.get('nd2a_download', "")) == 'True',
-            'n4e': row.get('nd4_eff_date'), 'n4f': row.get('nd4_file_date'), 
-            'n4d': str(row.get('nd4_download', "")) == 'True',
-            'dis': row.get('dissolution_date')
-        }
-        
-        # 如果是 Copy 模式，清空名稱相關欄位，避免直接覆蓋舊公司
-        if mode == "📋 Copy Existing":
-            d['en'] = d['en'] + " (Copy)"
-            d['ch'] = d['ch'] + " (複本)"
+        if target_name != "":
+            row = df_all[df_all['name_en'] == target_name].iloc[0]
+            d = {
+                'cg': row.get('client_group', ""), 'en': row.get('name_en', ""), 'ch': row.get('name_ch', ""), 
+                'idate': row.get('incorp_date'), 'place': row.get('incorp_place', "HK"), 
+                'p_oth': row.get('incorp_place_others', ""), 'ci': row.get('ci_no', ""), 'br': row.get('br_no', ""), 
+                'type': row.get('co_type', "Private Company"), 'ra': row.get('reg_addr', ""), 'ca': row.get('corres_addr', ""),
+                'rl': row.get('round_loc', ""), 'sl': row.get('sign_loc', ""), 'cl': row.get('seal_loc', ""),
+                'n2e': row.get('nd2a_eff_date'), 'n2f': row.get('nd2a_file_date'), 
+                'n2d': str(row.get('nd2a_download', "")) == 'True',
+                'n4e': row.get('nd4_eff_date'), 'n4f': row.get('nd4_file_date'), 
+                'n4d': str(row.get('nd4_download', "")) == 'True',
+                'dis': row.get('dissolution_date')
+            }
+            # 如果是 Copy 模式，建議清空名稱讓用戶輸入新的
+            if mode == "📋 Copy Existing":
+                d['en'] = "" 
+                d['ch'] = ""
 
     st.markdown("### General Information")
     client_group = st.selectbox("Select Client Group", [""] + groups, index=(groups.index(d['cg'])+1 if d['cg'] in groups else 0))
@@ -125,7 +125,7 @@ elif choice == "🏢 Company Register":
     st.write("---")
     dis_date = st.date_input("Company Dissolution Date", value=d['dis'])
     
-    # --- 保存、修改與複製的邏輯 ---
+    # --- 保存、修改與複製 ---
     if mode in ["🆕 Add New", "📋 Copy Existing"]:
         with st.popover("💾 Save To Cloud"):
             st.write("Confirm save this as a new record?")
@@ -155,7 +155,7 @@ elif choice == "🏢 Company Register":
                 st.warning("Deleted!")
                 st.rerun()
 
-# --- 5. Dashboard (保持鎖定) ---
+# --- 5. Dashboard (鎖定) ---
 elif choice == "📊 Dashboard":
     st.header("📊 Compliance Overview")
     df = pd.read_sql("SELECT * FROM companies", engine)
