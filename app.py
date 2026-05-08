@@ -4,7 +4,7 @@ from sqlalchemy import create_engine, text
 from datetime import datetime, timedelta
 import io
 
-# --- 1. Database Connection (鎖定 V28) ---
+# --- 1. Database Connection ---
 try:
     DB_URL = st.secrets["DB_URL"]
     engine = create_engine(DB_URL)
@@ -19,7 +19,7 @@ choice = st.sidebar.radio("Navigation", ["📊 Dashboard", "🏢 Company Registe
 # 定義必填欄位
 REQUIRED_COLS = ["client_group", "name_en", "name_ch", "incorp_date", "incorp_place", "ci_no", "br_no", "co_type", "reg_addr", "corres_addr", "round_loc", "sign_loc", "seal_loc"]
 
-# --- 3. Data Exchange (鎖定 V28 邏輯) ---
+# --- 3. Data Exchange (V28 穩定版) ---
 if choice == "📤 Data Exchange":
     st.header("📤 Data Exchange & Backup")
     st.subheader("1. Download & Backup")
@@ -43,24 +43,17 @@ if choice == "📤 Data Exchange":
     if uploaded_file:
         try:
             up_df = pd.read_excel(uploaded_file, engine='openpyxl', keep_default_na=False)
-            if st.button("🚀 Confirm Upload to Cloud"):
+            if st.button("🚀 Confirm Upload"):
                 date_cols = ["incorp_date", "nd2a_eff_date", "nd2a_file_date", "nd4_eff_date", "nd4_file_date", "dissolution_date"]
                 for col in date_cols:
                     if col in up_df.columns:
                         up_df[col] = up_df[col].apply(lambda x: None if str(x).strip().lower() in ["", "nan", "n/a", "none", "nil"] else x)
                         up_df[col] = pd.to_datetime(up_df[col], errors='coerce')
-                error_logs = []
-                for i, row in up_df.iterrows():
-                    missing = [c for c in REQUIRED_COLS if pd.isna(row[c]) or str(row[c]).strip() == ""]
-                    if missing: error_logs.append(f"Row {i+2}: 缺少 {', '.join(missing)}")
-                if error_logs:
-                    for log in error_logs[:10]: st.write(log)
-                else:
-                    up_df.to_sql('companies', engine, if_exists='append', index=False)
-                    st.success("✅ 匯入成功！"); st.rerun()
+                up_df.to_sql('companies', engine, if_exists='append', index=False)
+                st.success("✅ Uploaded!"); st.rerun()
         except Exception as e: st.error(f"Error: {e}")
 
-# --- 4. Company Register (100% 鎖定第 28 版邏輯) ---
+# --- 4. Company Register (強化刪除確認版) ---
 elif choice == "🏢 Company Register":
     st.header("🏢 Company Records Management")
     mode = st.radio("Mode", ["🆕 Add New", "✏️ Edit Existing", "📋 Copy Existing"], horizontal=True)
@@ -86,7 +79,6 @@ elif choice == "🏢 Company Register":
     st.write("---")
     col_ci, col_br = st.columns(2); ci_no = col_ci.text_input(red_label("CI", d['ci']), value=d['ci']); br_no = col_br.text_input(red_label("BR", d['br']), value=d['br']); types = ["", "Private Company", "Public Company", "Company Limited by Guarantee"]; t_idx = types.index(d['type']) if d['type'] in types else 0; co_type = st.selectbox(red_label("Type", d['type']), types, index=t_idx)
     st.write("---")
-    st.markdown("### 📝 ND2A & ND4")
     cc1, cc2, cc3 = st.columns([2, 2, 2]); n2e = cc1.date_input("ND2A Eff", value=d['n2e']); n2f = cc2.date_input("ND2A File", value=d['n2f'])
     if n2e: cc3.warning(f"Deadline: {n2e + timedelta(days=15)}")
     rr1, rr2, rr3 = st.columns([2, 2, 2]); n4e = rr1.date_input("ND4 Eff", value=d['n4e']); n4f = rr2.date_input("ND4 File", value=d['n4f'])
@@ -102,58 +94,51 @@ elif choice == "🏢 Company Register":
                 pd.DataFrame([{'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no, 'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr, 'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l, 'nd2a_eff_date': n2e, 'nd2a_file_date': n2f, 'nd4_eff_date': n4e, 'nd4_file_date': n4f, 'dissolution_date': dis_date}]).to_sql('companies', engine, if_exists='append', index=False)
                 st.success("Saved!"); st.rerun()
     else:
-        with st.popover("🆙 Update"):
+        cb1, cb2 = st.columns(2)
+        with cb1.popover("🆙 Update"):
             if st.button("Confirm Update"):
                 df_f = df_all[df_all['name_en'] != target_name]
                 up_r = {'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no, 'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr, 'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l, 'nd2a_eff_date': n2e, 'nd2a_file_date': n2f, 'nd4_eff_date': n4e, 'nd4_file_date': n4f, 'dissolution_date': dis_date}
                 pd.concat([df_f, pd.DataFrame([up_r])], ignore_index=True).to_sql('companies', engine, if_exists='replace', index=False); st.success("Updated!"); st.rerun()
+        
+        with cb2.popover("🚨 DELETE THIS COMPANY"):
+            st.error(f"⚠️ **ATTENTION!** ⚠️")
+            st.write(f"You are about to permanently delete: **{target_name}**")
+            confirm_text = st.text_input("Type **DELETE** to confirm", key="single_del_input")
+            if st.button("🔥 YES, DELETE NOW", disabled=(confirm_text != "DELETE")):
+                df_all[df_all['name_en'] != target_name].to_sql('companies', engine, if_exists='replace', index=False)
+                st.warning(f"{target_name} deleted."); st.rerun()
 
-# --- 5. Dashboard (實體全選按鈕版) ---
+# --- 5. Dashboard (強效批量刪除版) ---
 elif choice == "📊 Dashboard":
     st.header("📊 Compliance Overview & Batch Actions")
     df = pd.read_sql("SELECT * FROM companies", engine)
     
     if not df.empty:
-        # 管理 Session State
-        if 'select_state' not in st.session_state:
-            st.session_state.select_state = False
-
-        # 工具列
-        col_t1, col_t2, col_t3, col_t4 = st.columns([2, 2, 2, 6])
-        if col_t1.button("🔄 Refresh"):
-            st.rerun()
-        if col_t2.button("✅ Select All"):
-            st.session_state.select_state = True
-            st.rerun()
-        if col_t3.button("🧹 Clear All"):
-            st.session_state.select_state = False
-            st.rerun()
+        if 'select_state' not in st.session_state: st.session_state.select_state = False
+        t1, t2, t3, t4 = st.columns([2, 2, 2, 6])
+        if t1.button("🔄 Refresh"): st.rerun()
+        if t2.button("✅ Select All"): st.session_state.select_state = True; st.rerun()
+        if t3.button("🧹 Clear All"): st.session_state.select_state = False; st.rerun()
             
-        # 準備表格數據
         df.insert(0, "Select", st.session_state.select_state)
-        
-        edited_df = st.data_editor(
-            df,
-            column_config={"Select": st.column_config.CheckboxColumn("Select", default=False)},
-            disabled=[c for c in df.columns if c != "Select"],
-            hide_index=True,
-            use_container_width=True,
-            key="dashboard_editor_v31"
-        )
-        
+        edited_df = st.data_editor(df, column_config={"Select": st.column_config.CheckboxColumn("Select", default=False)}, disabled=[c for c in df.columns if c != "Select"], hide_index=True, use_container_width=True, key="dashboard_editor_v32")
         selected_rows = edited_df[edited_df["Select"] == True]
         
         if len(selected_rows) > 0:
-            st.warning(f"Selected: {len(selected_rows)} records.")
-            with st.popover("🚨 BATCH DELETE"):
-                st.write(f"Delete these {len(selected_rows)} companies?")
-                if st.button("🔥 YES, CONFIRM"):
+            st.warning(f"⚠️ {len(selected_rows)} companies selected for deletion.")
+            with st.popover("🧨 CRITICAL: BATCH DELETE"):
+                st.error("### 🛑 DANGER ZONE")
+                st.write(f"This will permanently delete **{len(selected_rows)}** records from the database.")
+                st.write("This action **CANNOT** be undone.")
+                user_conf = st.text_input(f"To confirm, type **DELETE**", key="batch_del_input")
+                
+                if st.button("🔥 I UNDERSTAND, DELETE ALL SELECTED", disabled=(user_conf != "DELETE")):
                     to_del = selected_rows["name_en"].tolist()
                     latest = pd.read_sql("SELECT * FROM companies", engine)
                     latest[~latest["name_en"].isin(to_del)].to_sql('companies', engine, if_exists='replace', index=False)
-                    st.success("Deleted!"); st.rerun()
-    else:
-        st.info("No records.")
+                    st.success(f"Successfully purged {len(selected_rows)} records!"); st.rerun()
+    else: st.info("No records.")
 
 # --- 6. Group Management ---
 elif choice == "⚙️ Group Management":
@@ -168,6 +153,9 @@ elif choice == "⚙️ Group Management":
     g_df = pd.read_sql("SELECT * FROM client_groups", engine)
     if not g_df.empty:
         target_g = st.selectbox("Select Group", g_df['group_name'].tolist())
-        if st.button("Confirm Delete Group"):
-            g_df[g_df['group_name'] != target_g].to_sql('client_groups', engine, if_exists='replace', index=False)
-            st.rerun()
+        with st.popover("🗑️ Delete Group"):
+            st.error(f"Delete Group: **{target_g}**?")
+            conf = st.text_input("Type **DELETE** to confirm group removal", key="group_del_input")
+            if st.button("Confirm Delete Group", disabled=(conf != "DELETE")):
+                g_df[g_df['group_name'] != target_g].to_sql('client_groups', engine, if_exists='replace', index=False)
+                st.rerun()
