@@ -36,7 +36,7 @@ if choice == "⚙️ Group Management":
                 new_df.to_sql('client_groups', engine, if_exists='replace', index=False)
                 st.rerun()
 
-# --- 4. Company Register (加入動態必填邏輯) ---
+# --- 4. Company Register (修正預載邏輯) ---
 elif choice == "🏢 Company Register":
     st.header("🏢 Company Records Management")
     mode = st.radio("Mode", ["🆕 Add New", "✏️ Edit Existing", "📋 Copy Existing"], horizontal=True)
@@ -44,28 +44,43 @@ elif choice == "🏢 Company Register":
     df_all = pd.read_sql("SELECT * FROM companies", engine)
     groups = pd.read_sql("SELECT group_name FROM client_groups", engine)['group_name'].tolist()
     
+    # 初始化空白資料容器
     d = {'cg': "", 'en': "", 'ch': "", 'idate': None, 'place': "", 'p_oth': "", 'ci': "", 'br': "", 'type': "", 'ra': "", 'ca': "", 'rl': "", 'sl': "", 'cl': "", 'n2e': None, 'n2f': None, 'n2d': False, 'n4e': None, 'n4f': None, 'n4d': False, 'dis': None}
     target_name = None
 
+    # 選單設定
     if mode in ["✏️ Edit Existing", "📋 Copy Existing"] and not df_all.empty:
         comp_list = [""] + df_all['name_en'].tolist()
         label = "Select Company to Edit" if mode == "✏️ Edit Existing" else "Select Company to Copy From"
         target_name = st.selectbox(label, comp_list)
         
+        # 只有當用戶真正揀咗一間公司時，先至填入資料
         if target_name != "":
             row = df_all[df_all['name_en'] == target_name].iloc[0]
             d = {
-                'cg': row.get('client_group', ""), 'en': row.get('name_en', ""), 'ch': row.get('name_ch', ""), 
-                'idate': row.get('incorp_date'), 'place': row.get('incorp_place', ""), 
-                'p_oth': row.get('incorp_place_others', ""), 'ci': row.get('ci_no', ""), 'br': row.get('br_no', ""), 
-                'type': row.get('co_type', ""), 'ra': row.get('reg_addr', ""), 'ca': row.get('corres_addr', ""),
-                'rl': row.get('round_loc', ""), 'sl': row.get('sign_loc', ""), 'cl': row.get('seal_loc', ""),
-                'n2e': row.get('nd2a_eff_date'), 'n2f': row.get('nd2a_file_date'), 
+                'cg': row.get('client_group', ""), 
+                'en': row.get('name_en', ""), 
+                'ch': row.get('name_ch', ""), 
+                'idate': row.get('incorp_date'), 
+                'place': row.get('incorp_place', ""), # 帶入舊資料，唔再強制變空白
+                'p_oth': row.get('incorp_place_others', ""), 
+                'ci': row.get('ci_no', ""), 
+                'br': row.get('br_no', ""), 
+                'type': row.get('co_type', ""),       # 帶入舊資料，唔再強制變空白
+                'ra': row.get('reg_addr', ""), 
+                'ca': row.get('corres_addr', ""),
+                'rl': row.get('round_loc', ""), 
+                'sl': row.get('sign_loc', ""), 
+                'cl': row.get('seal_loc', ""),
+                'n2e': row.get('nd2a_eff_date'), 
+                'n2f': row.get('nd2a_file_date'), 
                 'n2d': str(row.get('nd2a_download', "")) == 'True',
-                'n4e': row.get('nd4_eff_date'), 'n4f': row.get('nd4_file_date'), 
+                'n4e': row.get('nd4_eff_date'), 
+                'n4f': row.get('nd4_file_date'), 
                 'n4d': str(row.get('nd4_download', "")) == 'True',
                 'dis': row.get('dissolution_date')
             }
+            # 只有 Copy 模式先至清空名，方便入新名
             if mode == "📋 Copy Existing":
                 d['en'] = "" 
                 d['ch'] = ""
@@ -87,9 +102,10 @@ elif choice == "🏢 Company Register":
     inc_date = col3.date_input(red_label("Date of Incorporation", d['idate']), value=d['idate'])
     
     places = ["", "HK", "BVI", "Cayman Island", "Others"]
-    inc_place = col4.selectbox(red_label("Place of Incorporation", d['place']), places, index=places.index(d['place']) if d['place'] in places else 0)
+    # 根據讀取到嘅 d['place'] 自動對準 index，唔再強制 index 0
+    p_idx = places.index(d['place']) if d['place'] in places else 0
+    inc_place = col4.selectbox(red_label("Place of Incorporation", d['place']), places, index=p_idx)
     
-    # 動態檢查 Others 國家
     place_others = ""
     if inc_place == "Others":
         place_others = st.text_input(red_label("Specify Country", d['p_oth']), value=d['p_oth'])
@@ -100,7 +116,9 @@ elif choice == "🏢 Company Register":
     br_no = col_br.text_input(red_label("BR Number", d['br']), value=d['br'])
     
     types = ["", "Private Company", "Public Company", "Company Limited by Guarantee"]
-    co_type = st.selectbox(red_label("Company Type", d['type']), types, index=types.index(d['type']) if d['type'] in types else 0)
+    # 根據讀取到嘅 d['type'] 自動對準 index，唔再強制 index 0
+    t_idx = types.index(d['type']) if d['type'] in types else 0
+    co_type = st.selectbox(red_label("Company Type", d['type']), types, index=t_idx)
     
     st.write("---")
     st.markdown("### 📝 Company Secretary Appointment (ND2A)")
@@ -147,7 +165,6 @@ elif choice == "🏢 Company Register":
         "Round Chop Location": round_l, "Signature Chop Location": sign_l, "Common Seal Location": common_l
     }
     
-    # 如果選了 Others，額外檢查 Specify Country
     if inc_place == "Others":
         required_fields["Specify Country"] = place_others
 
