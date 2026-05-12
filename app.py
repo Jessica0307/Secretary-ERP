@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 import io
 from weasyprint import HTML
 
-# --- 1. Database Connection ---
+# --- 1. Database Connection (鎖定) ---
 try:
     DB_URL = st.secrets["DB_URL"]
     engine = create_engine(DB_URL)
@@ -23,16 +23,17 @@ def to_date(val):
         return None
 
 # --- 3. Navigation ---
-st.set_page_config(page_title="ERP Cloud V106", layout="wide")
+st.set_page_config(page_title="ERP Cloud V107", layout="wide")
 choice = st.sidebar.radio("Navigation", ["📊 Dashboard", "🏢 Company Register", "⚙️ Group Management", "📤 Data Exchange"])
 
-# --- 4. PDF 生成函式 (【V106：頁尾 Footer 搬遷 + 公司名 Heading】) ---
+# --- 4. PDF 生成函式 (【V107：採用 @page 邊界修復頁尾移位】) ---
 def generate_custom_pdf(selected_df):
     now = datetime.now().strftime("%Y/%m/%d %H:%M")
     def fmt_date(val):
         d = to_date(val)
         return d.strftime('%Y/%m/%d') if d else "N/A"
     
+    # 呢度係修復核心：利用 CSS @page 嚟定義 footer
     html_content = f"""
     <html>
     <head>
@@ -41,38 +42,38 @@ def generate_custom_pdf(selected_df):
         <style>
             @page {{ 
                 size: A4; 
-                margin: 10mm 10mm 20mm 10mm; /* 增加底部邊距畀 Footer */
+                margin: 15mm 10mm 20mm 10mm; 
+                @bottom-left {{
+                    content: "Corporate Portfolio Report";
+                    font-family: 'Noto Sans TC', sans-serif;
+                    font-size: 9pt;
+                    color: #7f8c8d;
+                    border-top: 0.5pt solid #eee;
+                    padding-top: 5px;
+                }}
+                @bottom-right {{
+                    content: "Generated on: {now}";
+                    font-family: 'Noto Sans TC', sans-serif;
+                    font-size: 9pt;
+                    color: #7f8c8d;
+                    border-top: 0.5pt solid #eee;
+                    padding-top: 5px;
+                }}
             }}
-            body {{ font-family: 'Noto Sans TC', sans-serif; color: #2c3e50; line-height: 1.4; background-color: #ffffff; }}
+            body {{ font-family: 'Noto Sans TC', sans-serif; color: #2c3e50; line-height: 1.4; }}
             
-            /* Footer 設置：鎖死喺頁面底部 */
-            #footer {{
-                position: fixed;
-                bottom: -10mm;
-                left: 0;
-                right: 0;
-                height: 10mm;
-                border-top: 1px solid #eee;
-                padding-top: 5px;
-                font-size: 9pt;
-                color: #7f8c8d;
-            }}
-            .footer-left {{ float: left; }}
-            .footer-right {{ float: right; }}
+            /* 公司名 Heading 置中並重複 */
+            .main-table {{ width: 100%; border-collapse: collapse; }}
+            .main-table thead {{ display: table-header-group; }}
+            .header-content {{ text-align: center; border-bottom: 1px solid #eee; padding-bottom: 15px; margin-bottom: 20px; }}
+            .name-en {{ font-size: 22pt; font-weight: bold; color: #2980b9; }}
+            .name-ch {{ font-size: 16pt; color: #333333; margin-top: 5px; }}
 
             /* 每一間公司重新開頁 */
             .company-container {{ page-break-before: always; width: 100%; }}
             .company-container:first-child {{ page-break-before: auto; }}
             
-            /* Table Heading 用嚟重複顯示公司名 */
-            .main-table {{ width: 100%; border-collapse: collapse; }}
-            .main-table thead {{ display: table-header-group; }}
-            
-            /* 公司名 Heading 置中 */
-            .header-content {{ text-align: center; border-bottom: 1px solid #eee; padding-bottom: 15px; margin-bottom: 20px; }}
-            .name-en {{ font-size: 22pt; font-weight: bold; color: #2980b9; }}
-            .name-ch {{ font-size: 16pt; color: #333333; margin-top: 5px; }}
-            
+            /* V102 款式還原 */
             .section-bar {{ 
                 background-color: #f1f4f6; padding: 8px 15px; font-weight: bold; font-size: 11pt; 
                 margin: 20px 0 10px 0; border-left: 5px solid #3498db; color: #2c3e50;
@@ -86,11 +87,6 @@ def generate_custom_pdf(selected_df):
         </style>
     </head>
     <body>
-        <!-- 頁尾內容 (Weasyprint position:fixed 會喺每頁出現) -->
-        <div id="footer">
-            <div class="footer-left">Corporate Portfolio Report</div>
-            <div class="footer-right">Generated on: {now}</div>
-        </div>
     """
     for _, row in selected_df.iterrows():
         html_content += f"""
@@ -109,7 +105,6 @@ def generate_custom_pdf(selected_df):
                 <tbody>
                     <tr>
                         <td>
-                            <!-- Section 1: Registration Details -->
                             <div class="section-group">
                                 <div class="section-bar">Registration Details / 註冊詳情</div>
                                 <table class="info-table">
@@ -121,8 +116,6 @@ def generate_custom_pdf(selected_df):
                                     <tr><th>Company Type / 公司類別</th><td>{row.get('co_type','')}</td></tr>
                                 </table>
                             </div>
-
-                            <!-- Section 2: Addresses -->
                             <div class="section-group">
                                 <div class="section-bar">Addresses / 地址</div>
                                 <table class="info-table">
@@ -130,8 +123,6 @@ def generate_custom_pdf(selected_df):
                                     <tr><th>Correspondence Address / 通訊地址</th><td>{row.get('corres_addr','')}</td></tr>
                                 </table>
                             </div>
-
-                            <!-- Section 3: Items Storage -->
                             <div class="section-group">
                                 <div class="section-bar">Items Storage / 物品存放位置</div>
                                 <table class="info-table">
@@ -140,8 +131,6 @@ def generate_custom_pdf(selected_df):
                                     <tr><th>Common Seal / 鋼印</th><td>{row.get('seal_loc','')}</td></tr>
                                 </table>
                             </div>
-
-                            <!-- Section 4: Compliance Filings (置底) -->
                             <div class="section-group">
                                 <div class="section-bar">Compliance Filings / 法定申報</div>
                                 <table class="info-table">
@@ -168,16 +157,16 @@ if choice == "📊 Dashboard":
         if t2.button("🔄 Refresh"): st.rerun()
         df_filtered = df_raw if filter_g == "All Groups" else df_raw[df_raw['client_group'] == filter_g]
         
-        if 'sel_v106' not in st.session_state: st.session_state.sel_v106 = False
-        if t3.button("✅ Select All"): st.session_state.sel_v106 = True; st.rerun()
-        if t4.button("🧹 Clear All"): st.session_state.sel_v106 = False; st.rerun()
+        if 'sel_v107' not in st.session_state: st.session_state.sel_v107 = False
+        if t3.button("✅ Select All"): st.session_state.sel_v107 = True; st.rerun()
+        if t4.button("🧹 Clear All"): st.session_state.sel_v107 = False; st.rerun()
         
         df_display = df_filtered.copy()
         for col in ["incorp_date", "nd2a_eff_date", "nd4_eff_date"]:
             if col in df_display.columns: df_display[col] = pd.to_datetime(df_display[col], errors='coerce').dt.date
-        df_display.insert(0, "Select", st.session_state.sel_v106)
+        df_display.insert(0, "Select", st.session_state.sel_v107)
         
-        edit_df = st.data_editor(df_display, column_config={"Select": st.column_config.CheckboxColumn("Select", default=False)}, hide_index=True, use_container_width=True, key="dash_v106")
+        edit_df = st.data_editor(df_display, column_config={"Select": st.column_config.CheckboxColumn("Select", default=False)}, hide_index=True, use_container_width=True, key="dash_v107")
         selected = edit_df[edit_df["Select"] == True]
         
         if len(selected) > 0:
@@ -187,8 +176,8 @@ if choice == "📊 Dashboard":
                     final_data = df_raw[df_raw['name_en'].isin(selected['name_en'])]
                     st.download_button(label="Download Now", data=generate_custom_pdf(final_data), file_name="Report.pdf", mime="application/pdf")
             with act2.popover("🧨 BATCH DELETE"):
-                st.error("🛑 DANGER ZONE"); conf_b = st.text_input("Type DELETE", key="batch_del_v106")
-                if st.button("Confirm Batch Delete", disabled=(conf_b != "DELETE"), key="btn_batch_del_v106"):
+                st.error("🛑 DANGER ZONE"); conf_b = st.text_input("Type DELETE", key="batch_del_v107")
+                if st.button("Confirm Batch Delete", disabled=(conf_b != "DELETE"), key="btn_batch_del_v107"):
                     df_raw[~df_raw["name_en"].isin(selected["name_en"].tolist())].to_sql('companies', engine, if_exists='replace', index=False); st.rerun()
     else: st.info("No records.")
 
@@ -253,25 +242,25 @@ elif choice == "🏢 Company Register":
     
     st.subheader("📑 Company Secretary Appointment (ND2A)")
     cc1, cc2, cc3, cc4 = st.columns([3, 3, 3, 1])
-    with cc1: n2e = st.date_input("Effective Date (Appt)", value=to_date(d['n2e']), key="n2e_v106")
-    with cc2: n2f = st.date_input("Filing Date (ND2A)", value=to_date(d['n2f']), key="n2f_v106")
+    with cc1: n2e = st.date_input("Effective Date (Appt)", value=to_date(d['n2e']), key="n2e_v107")
+    with cc2: n2f = st.date_input("Filing Date (ND2A)", value=to_date(d['n2f']), key="n2f_v107")
     with cc3:
         st.info("Statutory Period: 15 days")
         if n2e:
             n2_deadline = (n2e + timedelta(days=15))
             st.markdown(f"**Deadline: :red[{n2_deadline}]**") 
-    with cc4: n2d = st.checkbox("Downloaded", value=d['n2d'], key="n2d_v106")
+    with cc4: n2d = st.checkbox("Downloaded", value=d['n2d'], key="n2d_v107")
     
     st.subheader("📑 Company Secretary Resignation (ND4)")
     cc5, cc6, cc7, cc8 = st.columns([3, 3, 3, 1])
-    with cc5: n4e = st.date_input("Effective Date (Resign)", value=to_date(d['n4e']), key="n4e_v106")
-    with cc6: n4f = st.date_input("Filing Date (ND4)", value=to_date(d['n4f']), key="n4f_v106")
+    with cc5: n4e = st.date_input("Effective Date (Resign)", value=to_date(d['n4e']), key="n4e_v107")
+    with cc6: n4f = st.date_input("Filing Date (ND4)", value=to_date(d['n4f']), key="n4f_v107")
     with cc7:
         st.info("Statutory Period: 15 days")
         if n4e:
             n4_deadline = (n4e + timedelta(days=15))
             st.markdown(f"**Deadline: :red[{n4_deadline}]**") 
-    with cc8: n4d = st.checkbox("Downloaded", value=d['n4d'], key="n4d_v106")
+    with cc8: n4d = st.checkbox("Downloaded", value=d['n4d'], key="n4d_v107")
 
     # --- 第三部分：Address, Seal & Save ---
     st.write("---")
@@ -300,7 +289,7 @@ elif choice == "🏢 Company Register":
     st.markdown("Company Dissolution Date")
     dis_date = st.date_input("Dissolution", value=to_date(d['dis']), label_visibility="collapsed")
     
-    row_v106 = {'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no, 'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr, 'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l, 'nd2a_eff_date': n2e, 'nd2a_file_date': n2f, 'nd2a_download': n2d, 'nd4_eff_date': n4e, 'nd4_file_date': n4f, 'nd4_download': n4d, 'dissolution_date': dis_date}
+    row_v107 = {'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_date': inc_date, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'ci_no': ci_no, 'br_no': br_no, 'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr, 'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l, 'nd2a_eff_date': n2e, 'nd2a_file_date': n2f, 'nd2a_download': n2d, 'nd4_eff_date': n4e, 'nd4_file_date': n4f, 'nd4_download': n4d, 'dissolution_date': dis_date}
 
     mandatory_fields = {
         "Client Group": client_group, "English Name": name_en,
@@ -312,45 +301,45 @@ elif choice == "🏢 Company Register":
     missing = [k for k, v in mandatory_fields.items() if not v or str(v).strip() == ""]
 
     if mode in ["🆕 Add New", "📋 Copy Existing"]:
-        if st.button("💾 Save To Cloud", key="btn_save_v106"):
+        if st.button("💾 Save To Cloud", key="btn_save_v107"):
             if missing: st.error(f"❌ Missing: {', '.join(missing)}")
             else:
-                pd.DataFrame([row_v106]).to_sql('companies', engine, if_exists='append', index=False)
+                pd.DataFrame([row_v107]).to_sql('companies', engine, if_exists='append', index=False)
                 st.success("✅ Success!"); st.rerun()
     else:
         u_col, d_col = st.columns(2)
         with u_col.popover("🆙 Update"):
-            if st.button("Confirm Update", key="btn_update_v106"):
+            if st.button("Confirm Update", key="btn_update_v107"):
                 if missing: st.error(f"❌ Missing: {', '.join(missing)}")
                 else:
                     df_all[df_all['name_en'] != target_name].to_sql('companies', engine, if_exists='replace', index=False)
-                    pd.DataFrame([row_v106]).to_sql('companies', engine, if_exists='append', index=False)
+                    pd.DataFrame([row_v107]).to_sql('companies', engine, if_exists='append', index=False)
                     st.success("✅ Updated!"); st.rerun()
         with d_col.popover("🚨 DELETE"):
-            st.error(f"Delete {target_name}?"); conf_s = st.text_input("Type DELETE", key="single_del_v106")
-            if st.button("Confirm Delete Company", disabled=(conf_s != "DELETE"), key="btn_del_single_v106"):
+            st.error(f"Delete {target_name}?"); conf_s = st.text_input("Type DELETE", key="single_del_v107")
+            if st.button("Confirm Delete Company", disabled=(conf_s != "DELETE"), key="btn_del_single_v107"):
                 df_all[df_all['name_en'] != target_name].to_sql('companies', engine, if_exists='replace', index=False); st.rerun()
 
 # --- 7. Group Management ---
 elif choice == "⚙️ Group Management":
     st.header("⚙️ Group Management")
-    new_g = st.text_input("New Group Name", key="new_group_input_v106")
-    if st.button("Add Group", key="btn_add_group_v106"): pd.DataFrame([{'group_name': new_g}]).to_sql('client_groups', engine, if_exists='append', index=False); st.rerun()
+    new_g = st.text_input("New Group Name", key="new_group_input_v107")
+    if st.button("Add Group", key="btn_add_group_v107"): pd.DataFrame([{'group_name': new_g}]).to_sql('client_groups', engine, if_exists='append', index=False); st.rerun()
     st.write("---")
     g_df = pd.read_sql("SELECT * FROM client_groups", engine)
     if not g_df.empty:
-        target = st.selectbox("Select Group", g_df['group_name'].tolist(), key="select_group_manage_v106")
+        target = st.selectbox("Select Group", g_df['group_name'].tolist(), key="select_group_manage_v107")
         c1, c2 = st.columns(2)
         with c1.popover("✏️ Rename Group"):
-            ren = st.text_input("New Name:", key="rename_input_v106")
-            conf_r = st.text_input("Type RENAME", key="rename_confirm_text_v106")
-            if st.button("Confirm Rename", disabled=(conf_r != "RENAME"), key="btn_group_rename_v106"):
+            ren = st.text_input("New Name:", key="rename_input_v107")
+            conf_r = st.text_input("Type RENAME", key="rename_confirm_text_v107")
+            if st.button("Confirm Rename", disabled=(conf_r != "RENAME"), key="btn_group_rename_v107"):
                 comp_df = pd.read_sql("SELECT * FROM companies", engine)
                 comp_df.loc[comp_df['client_group'] == target, 'client_group'] = ren
                 comp_df.to_sql('companies', engine, if_exists='replace', index=False)
                 g_df.replace({target: ren}).to_sql('client_groups', engine, if_exists='replace', index=False); st.rerun()
         with c2.popover("🗑️ Delete Group"):
-            if st.button("Confirm Delete Group", key="btn_group_delete_v106"): 
+            if st.button("Confirm Delete Group", key="btn_group_delete_v107"): 
                 g_df[g_df['group_name'] != target].to_sql('client_groups', engine, if_exists='replace', index=False); st.rerun()
 
 # --- 8. Data Exchange (鎖定 Export All) ---
@@ -364,11 +353,11 @@ elif choice == "📤 Data Exchange":
     buf_e = io.BytesIO()
     df_e.to_excel(buf_e, index=False)
     # 絕對鎖定：Export All
-    c2.download_button(label="📦 Export All", data=buf_e.getvalue(), file_name="Backup.xlsx", key="btn_export_all_v106")
+    c2.download_button(label="📦 Export All", data=buf_e.getvalue(), file_name="Backup.xlsx", key="btn_export_all_v107")
     
     st.write("---")
-    up = st.file_uploader("Upload XLSX File", type=["xlsx"], key="file_uploader_v106")
-    if up and st.button("🚀 Confirm Upload", key="btn_bulk_upload_v106"):
+    up = st.file_uploader("Upload XLSX File", type=["xlsx"], key="file_uploader_v107")
+    if up and st.button("🚀 Confirm Upload", key="btn_bulk_upload_v107"):
         try:
             up_df = pd.read_excel(up, engine='openpyxl', keep_default_na=False)
             mandatory = ["client_group", "name_en", "incorp_date", "ci_no", "br_no", "reg_addr"]
