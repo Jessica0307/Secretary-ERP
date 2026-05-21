@@ -1,26 +1,12 @@
-import streamlit as st
-import pandas as pd
-from sqlalchemy import create_engine
-from datetime import datetime
-import io
-from weasyprint import HTML
-
-# 確保連線正常
-engine = create_engine(st.secrets["DB_URL"])
-
-# 核心工具函式
-def to_date(val):
-    try:
-        if pd.isna(val) or val == "" or str(val).lower() in ["none", "nat"]: return None
-        return pd.to_datetime(val).date()
-    except: return None
-
-def fmt_date(val):
-    d = to_date(val)
-    return d.strftime('%Y/%m/%d') if d else "N/A"
-
-# PDF 生成函式 (完全保留 V128 排版，僅修改標籤名稱)
+# --- PDF 生成函式 (V128 原版結構，僅更新標籤顯示) ---
 def generate_custom_pdf(selected_df):
+    now = datetime.now().strftime("%Y/%m/%d %H:%M")
+    
+    # 維持 fmt_date 函數，確保輸出格式為 YYYY/MM/DD
+    def fmt_date(val):
+        d = to_date(val)
+        return d.strftime('%Y/%m/%d') if d else "N/A"
+    
     html_header = """<html><head><meta charset="UTF-8"><style>
         @page { size: A4; margin: 15mm; }
         body { font-family: sans-serif; }
@@ -32,7 +18,7 @@ def generate_custom_pdf(selected_df):
     
     final_html = html_header
     for _, row in selected_df.iterrows():
-        # 這裡嚴格跟足 V128 的所有欄位，一個都唔少
+        # 這裡僅修改了 Incorp. Date 的 Label 名稱，其餘結構與 V128 完全一致
         card = f"""
         <div class="company-container">
             <h2>{row.get('name_en', '')}</h2>
@@ -40,7 +26,7 @@ def generate_custom_pdf(selected_df):
             <div class="section-bar">Registration Details / 註冊詳情</div>
             <table class="info-table">
                 <tr><th>Client Group</th><td>{row.get('client_group', '')}</td></tr>
-                <tr><th>Incorp. Date (YYYY/MM/DD)</th><td>{fmt_date(row.get('incorp_date'))}</td></tr>
+                <tr><th>Incorp. Date / 成立日期 (YYYY/MM/DD)</th><td>{fmt_date(row.get('incorp_date'))}</td></tr>
                 <tr><th>Incorp. Place</th><td>{row.get('incorp_place', '')}</td></tr>
                 <tr><th>CI No.</th><td>{row.get('ci_no', '')}</td></tr>
                 <tr><th>BR No.</th><td>{row.get('br_no', '')}</td></tr>
@@ -66,14 +52,3 @@ def generate_custom_pdf(selected_df):
         final_html += card
     final_html += "</body></html>"
     return HTML(string=final_html).write_pdf()
-
-# --- 恢復原本的按鈕邏輯 ---
-# 檢查你的 Dashboard 頁面中，這段程式碼是否還在：
-if st.button("📥 Export Selected PDF"):
-    final_data = df_raw[df_raw['name_en'].isin(selected['name_en'])]
-    st.download_button(
-        label="Download PDF", 
-        data=generate_custom_pdf(final_data), 
-        file_name="Report.pdf", 
-        mime="application/pdf"
-    )
