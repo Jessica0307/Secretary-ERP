@@ -42,10 +42,10 @@ def to_date(val):
         return None
 
 # --- 3. Navigation ---
-st.set_page_config(page_title="ERP Cloud V126", layout="wide")
+st.set_page_config(page_title="ERP Cloud V127", layout="wide")
 choice = st.sidebar.radio("Navigation", ["📊 Dashboard", "🏢 Company Register", "⚙️ Group Management", "📤 Data Exchange"])
 
-# --- 4. PDF 生成函式 (維持 V125 純文字安全替換機制) ---
+# --- 4. PDF 生成函式 (維持 V126 安全替換機制) ---
 def generate_custom_pdf(selected_df):
     now = datetime.now().strftime("%Y/%m/%d %H:%M")
     def fmt_date(val):
@@ -111,38 +111,3 @@ def generate_custom_pdf(selected_df):
                                     <tr><th>BR No. / 商業登記編號</th><td>__BR_NO__</td></tr>
                                     <tr><th>Company Type / 公司類別</th><td>__CO_TYPE__</td></tr>
                                 </table>
-                            </div>
-                            <div class="section-group">
-                                <div class="section-bar">Addresses / 地址</div>
-                                <table class="info-table">
-                                    <tr><th>Registered Address / 註冊地址</th><td>__REG_ADDR__</td></tr>
-                                    <tr><th>Correspondence Address / 通訊地址</th><td>__CORRES_ADDR__</td></tr>
-                                </table>
-                            </div>
-                            <div class="section-group">
-                                <div class="section-bar">Items Storage / 物品存放位置</div>
-                                <table class="info-table">
-                                    <tr><th>Round Stamp / 小圓章</th><td>__ROUND_LOC__</td></tr>
-                                    <tr><th>Signature Chop / 簽名章</th><td>__SIGN_LOC__</td></tr>
-                                    <tr><th>Common Seal / 鋼印</th><td>__SEAL_LOC__</td></tr>
-                                </table>
-                            </div>
-                            <div class="section-group">
-                                <div class="section-bar">Compliance Filings / 法定申報</div>
-                                <table class="info-table">
-                                    <tr><th>ND2A Effective Date (YYYY/MM/DD)</th><td>__ND2A_EFF__</td></tr>
-                                    <tr><th>ND4 Effective Date (YYYY/MM/DD)</th><td>__ND4_EFF__</td></tr>
-                                </table>
-                            </div>
-                        </div>
-                    </td>
-                </tr>
-            </tbody>
-        </table>
-    </div>
-    """
-
-    final_html = html_header
-    for _, row in selected_df.iterrows():
-        ch_name = row.get('name_ch', '')
-        if not ch_name
