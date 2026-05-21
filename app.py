@@ -42,10 +42,10 @@ def to_date(val):
         return None
 
 # --- 3. Navigation ---
-st.set_page_config(page_title="ERP Cloud V122", layout="wide")
+st.set_page_config(page_title="ERP Cloud V123", layout="wide")
 choice = st.sidebar.radio("Navigation", ["📊 Dashboard", "🏢 Company Register", "⚙️ Group Management", "📤 Data Exchange"])
 
-# --- 4. PDF 生成函式 (維持 V121 樣式邏輯) ---
+# --- 4. PDF 生成函式 (【V123 修復】：全面將純 CSS 樣式大括號轉義為 {{ }} 防止語法錯誤) ---
 def generate_custom_pdf(selected_df):
     now = datetime.now().strftime("%Y/%m/%d %H:%M")
     def fmt_date(val):
@@ -70,8 +70,4 @@ def generate_custom_pdf(selected_df):
             .main-table thead {{ display: table-header-group; }}
             .header-content {{ text-align: center; border-bottom: 1px solid #eee; padding-bottom: 15px; margin-bottom: 20px; }}
             .name-en {{ font-size: 20pt; font-weight: bold; color: #2980b9; text-align: center; }}
-            .name-ch {{ font-size: 15pt; color: #333333; margin-top: 5px; text-align: center; min-height: 20px; }}
-            .section-bar {{ background-color: #f1f4f6; padding: 8px 15px; font-weight: bold; font-size: 11pt; margin: 20px 0 10px 0; border-left: 5px solid #3498db; color: #2c3e50; text-align: left; }}
-            .section-group {{ page-break-inside: avoid; }}
-            .info-table {{ width: 100%; border-collapse: collapse; }}
-            .info-table tr {{ border-bottom: 1px solid #
+            .name-ch {{ font-size
