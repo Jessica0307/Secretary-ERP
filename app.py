@@ -55,17 +55,13 @@ def generate_custom_pdf(selected_df):
         sort_cols = [c for c in ['client_group', 'name_en', 'incorp_place'] if c in selected_df.columns]
         selected_df = selected_df.sort_values(by=sort_cols, na_position='last')
 
-    html_header = """
-    <html><head><meta charset="UTF-8"><style>@page { size: A4; margin: 15mm; } body { font-family: sans-serif; }</style></head><body>
-    """
-    card_template = """
-    <div style="border: 1px solid #ddd; padding: 10px; margin-bottom: 20px;">
+    html_header = "<html><head><meta charset='UTF-8'><style>@page { size: A4; margin: 15mm; } body { font-family: sans-serif; }</style></head><body>"
+    card_template = """<div style="border: 1px solid #ddd; padding: 10px; margin-bottom: 20px;">
         <h3>__NAME_EN__</h3>
         <p>Incorp Place: __INCORP_PLACE__</p>
         <p>BR Paid By: __BR_PAID_BY__</p>
-        <p>Last BR Date: __L_BR__ | Last AR Date: __L_AR__</p>
-    </div>
-    """
+        <p>Last BR Date: __L_BR__ | Last AR Date: __L_AR__</p></div>"""
+    
     final_html = html_header
     for _, row in selected_df.iterrows():
         card = card_template.replace("__NAME_EN__", str(row.get('name_en', ''))).replace("__INCORP_PLACE__", str(row.get('incorp_place', ''))).replace("__BR_PAID_BY__", str(row.get('br_paid_by', ''))).replace("__L_BR__", fmt_date(row.get('last_br_resolved_date'))).replace("__L_AR__", fmt_date(row.get('last_ar_filed_date')))
@@ -73,13 +69,12 @@ def generate_custom_pdf(selected_df):
     final_html += "</body></html>"
     return HTML(string=final_html).write_pdf()
 
-# --- 5. Dashboard (批量編輯) ---
+# --- 5. Dashboard ---
 if choice == "📊 Dashboard":
     st.header("📊 Compliance Dashboard")
     df_raw = pd.read_sql("SELECT * FROM companies", engine)
     
     if not df_raw.empty:
-        # 顯示可編輯表格
         st.write("### 📝 Batch Compliance Editor")
         edit_cols = ['name_en', 'br_paid_by', 'last_br_resolved_date', 'last_ar_filed_date']
         df_edit = df_raw[edit_cols].copy()
@@ -92,20 +87,40 @@ if choice == "📊 Dashboard":
                 engine.execute(query)
             st.success("Updated!"); st.rerun()
 
-# --- 6. Company Register (Metric + 雙軌輸入) ---
+# --- 6. Company Register ---
 elif choice == "🏢 Company Register":
-    # ... [保留原 V136 邏輯，加返 st.metric] ...
-    # 喺 Annual Obligations 區塊：
+    st.title("🏢 Company Records Management")
+    mode = st.radio("Mode", ["🆕 Add New", "✏️ Edit Existing", "📋 Copy Existing"], horizontal=True)
+    df_all = pd.read_sql("SELECT * FROM companies", engine)
+    sorted_groups = sorted([g for g in pd.read_sql("SELECT group_name FROM client_groups", engine)['group_name'].tolist() if isinstance(g, str)])
+    MIN_DATE = datetime(1900, 1, 1)
+
+    d = {'cg': "", 'en': "", 'ch': "", 'place': "", 'p_oth': "", 'idate': None, 'ci': "", 'is_hk_reg': False, 'hk_idate': None, 'hk_ci': "", 'br': "", 'type': "", 'ra': "", 'ca': "", 'rl': "", 'sl': "", 'cl': "", 'n2e': None, 'n2f': None, 'n2d': False, 'n4e': None, 'n4f': None, 'n4d': False, 'l_br': None, 'l_ar': None, 'br_by': 'Firm', 'dis': None}
+    
+    target_name = None
+    if mode in ["✏️ Edit Existing", "📋 Copy Existing"] and not df_all.empty:
+        df_all = df_all.sort_values(by=['name_en', 'incorp_place'], na_position='last')
+        target_name = st.selectbox("Select Company", [""] + df_all['name_en'].tolist())
+        if target_name != "":
+            row = df_all[df_all['name_en'] == target_name].iloc[0]
+            d = {'cg': row.get('client_group', ""), 'en': row.get('name_en', ""), 'ch': row.get('name_ch', ""), 'place': row.get('incorp_place', ""), 'p_oth': row.get('incorp_place_others', ""), 'idate': row.get('incorp_date'), 'ci': row.get('ci_no', ""), 'is_hk_reg': str(row.get('is_hk_registered', "")) == 'True', 'hk_idate': row.get('hk_incorp_date'), 'hk_ci': row.get('hk_ci_no', ""), 'br': row.get('br_no', ""), 'type': row.get('co_type', ""), 'ra': row.get('reg_addr', ""), 'ca': row.get('corres_addr', ""), 'rl': row.get('round_loc', ""), 'sl': row.get('sign_loc', ""), 'cl': row.get('seal_loc', ""), 'n2e': row.get('nd2a_eff_date'), 'n2f': row.get('nd2a_file_date'), 'n2d': str(row.get('nd2a_download', "")) == 'True', 'n4e': row.get('nd4_eff_date'), 'n4f': row.get('nd4_file_date'), 'n4d': str(row.get('nd4_download', "")) == 'True', 'l_br': row.get('last_br_resolved_date'), 'l_ar': row.get('last_ar_filed_date'), 'br_by': row.get('br_paid_by', 'Firm'), 'dis': row.get('dissolution_date')}
+            if mode == "📋 Copy Existing": d['en'], d['ch'] = "", ""
+
+    # Inputs
+    name_en = st.text_input("English Name", value=d['en'])
+    inc_place = st.selectbox("Place", ["", "HK", "BVI", "Cayman Island", "Others"], index=(["", "HK", "BVI", "Cayman Island", "Others"].index(d['place']) if d['place'] in ["", "HK", "BVI", "Cayman Island", "Others"] else 0))
+    is_hk_reg = st.checkbox("Registered as Non-Hong Kong Company in HK?", value=d['is_hk_reg'])
+    
+    # Logic for Deadlines
     if inc_place == "HK" or is_hk_reg:
-        base = hk_idate if is_hk_reg else inc_date
-        anniv = get_anniv(today_cal.year, base.month, base.day)
-        nxt_br = anniv if today_cal <= anniv else get_anniv(today_cal.year + 1, base.month, base.day)
-        nxt_ar = (anniv if today_cal <= anniv else get_anniv(today_cal.year + 1, base.month, base.day)) + timedelta(days=42)
-        
-        col1, col2 = st.columns(2)
-        col1.metric("Next BR Deadline", nxt_br.strftime('%Y/%m/%d'))
-        col2.metric("Next AR Deadline", nxt_ar.strftime('%Y/%m/%d'))
-        
-        st.markdown("BR Paid By")
-        br_paid_by = st.selectbox("BR_By", ["Firm", "Client"], index=(0 if d.get('br_paid_by')=="Firm" else 1), label_visibility="collapsed")
-        # ... [繼續填入日期欄位] ...
+        base = to_date(d['hk_idate']) if is_hk_reg else to_date(d['idate'])
+        if base:
+            today_cal = datetime.now().date()
+            anniv = get_anniv(today_cal.year, base.month, base.day)
+            nxt_br = anniv if today_cal <= anniv else get_anniv(today_cal.year + 1, base.month, base.day)
+            nxt_ar = (anniv if today_cal <= anniv else get_anniv(today_cal.year + 1, base.month, base.day)) + timedelta(days=42)
+            st.metric("Next BR Deadline", nxt_br.strftime('%Y/%m/%d'))
+            st.metric("Next AR Deadline", nxt_ar.strftime('%Y/%m/%d'))
+    
+    # ... 其餘輸入框 (請填入完整版對應欄位) ...
+    # 當按 Update 時，記得將 br_paid_by 同埋新日期寫入 row_v137
