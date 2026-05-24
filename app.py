@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, date
 import io
 from weasyprint import HTML
 import openpyxl
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.styles import Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 # --- 1. Database Connection ---
@@ -43,8 +43,14 @@ def get_anniv(year, month, day):
     try: return date(year, month, day)
     except ValueError: return date(year, month, day - 1)
 
+def clean_status(val):
+    v = str(val)
+    for emo in ["🔴 ", "🟡 ", "🟢 ", "✅ "]:
+        v = v.replace(emo, "")
+    return v
+
 # --- 3. Navigation ---
-st.set_page_config(page_title="ERP Cloud V144", layout="wide")
+st.set_page_config(page_title="ERP Cloud V145", layout="wide")
 choice = st.sidebar.radio("Navigation", ["📊 Dashboard", "🏢 Company Register", "⚙️ Group Management", "📤 Data Exchange"])
 
 TEMPLATE_COLS = [
@@ -82,14 +88,13 @@ def generate_custom_pdf(selected_df):
             .company-container:first-child { page-break-before: auto; }
             .main-table { width: 100%; border-collapse: collapse; }
             .main-table thead { display: table-header-group; }
-            tr { page-break-inside: avoid; }
             .header-content { text-align: center; border-bottom: 1px solid #eee; padding-bottom: 15px; margin-bottom: 20px; }
             .name-en { font-size: 20pt; font-weight: bold; color: #2980b9; text-align: center; }
             .name-ch { font-size: 15pt; color: #333333; margin-top: 5px; text-align: center; min-height: 20px; }
             .section-bar { background-color: #f1f4f6; padding: 8px 15px; font-weight: bold; font-size: 11pt; margin: 20px 0 10px 0; border-left: 5px solid #3498db; color: #2c3e50; text-align: left; }
             .section-group { page-break-inside: avoid; }
             .info-table { width: 100%; border-collapse: collapse; }
-            .info-table tr { border-bottom: 1px solid #f1f2f6; }
+            .info-table tr { border-bottom: 1px solid #f1f2f6; page-break-inside: avoid; }
             .info-table th { text-align: left; width: 45%; color: #7f8c8d; padding: 8px 0; font-weight: normal; font-size: 10.5pt; }
             .info-table td { text-align: justify; padding: 8px 0; color: #2c3e50; font-size: 10.5pt; font-weight: bold; }
         </style>
@@ -208,32 +213,43 @@ def generate_custom_pdf(selected_df):
     final_html += "</body></html>"
     return HTML(string=final_html).write_pdf()
 
+def generate_general_excel(selected_df):
+    buf = io.BytesIO()
+    df_export = selected_df.copy()
+    existing_cols = [c for c in TEMPLATE_COLS if c in df_export.columns]
+    df_export = df_export[existing_cols] 
+    
+    date_cols = ["incorp_date", "hk_incorp_date", "nd2a_eff_date", "nd2a_file_date", "nd4_eff_date", "nd4_file_date", "last_br_resolved_date", "last_ar_filed_date", "dissolution_date"]
+    for col in date_cols:
+        if col in df_export.columns: 
+            df_export[col] = pd.to_datetime(df_export[col], errors='coerce').dt.strftime('%Y-%m-%d')
+            
+    df_export.to_excel(buf, index=False)
+    return buf.getvalue()
+
 def generate_beautiful_excel(df):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Outstanding Compliance"
     ws.views.sheetView[0].showGridLines = True
 
-    font_title = Font(name="Arial", size=16, bold=True, color="1F497D")
     font_header = Font(name="Arial", size=11, bold=True, color="FFFFFF")
     font_data = Font(name="Arial", size=10)
-    font_alert_red = Font(name="Arial", size=10, color="C00000", bold=True)
-    font_alert_yellow = Font(name="Arial", size=10, color="9C6500", bold=True)
+    font_red = Font(name="Arial", size=10, color="FF0000", bold=True)
+    font_yellow = Font(name="Arial", size=10, color="FF9900", bold=True)
+    font_green = Font(name="Arial", size=10, color="00B050", bold=True)
 
-    fill_header = PatternFill(start_color="1F497D", end_color="1F497D", fill_type="solid")
-    fill_zebra = PatternFill(start_color="F2F5F8", end_color="F2F5F8", fill_type="solid")
-    fill_alert_red = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
-    fill_alert_yellow = PatternFill(start_color="FFEB9C", end_color="FFEB9C", fill_type="solid")
-
+    fill_header = openpyxl.styles.PatternFill(start_color="1F497D", end_color="1F497D", fill_type="solid")
+    fill_zebra = openpyxl.styles.PatternFill(start_color="F8F9FA", end_color="F8F9FA", fill_type="solid")
     thin_border = Border(left=Side(style='thin', color='D9D9D9'), right=Side(style='thin', color='D9D9D9'), top=Side(style='thin', color='D9D9D9'), bottom=Side(style='thin', color='D9D9D9'))
 
     headers = ["Client Group", "Company Name EN", "Incorp Place", "BR Paid By", "BR Status", "BR Deadline", "AR Status", "AR Deadline"]
 
     ws.merge_cells("A1:H1")
-    ws["A1"] = "Outstanding Compliance Report"
-    ws["A1"].font = font_title
+    ws["A1"] = f"Outstanding Compliance Report (Generated on: {datetime.now().strftime('%Y/%m/%d %H:%M')})"
+    ws["A1"].font = Font(name="Arial", size=14, bold=True, color="1F497D")
     ws["A1"].alignment = Alignment(horizontal="left", vertical="center")
-    ws.row_dimensions[1].height = 40
+    ws.row_dimensions[1].height = 30
 
     for col_idx, text in enumerate(headers, 1):
         cell = ws.cell(row=3, column=col_idx, value=text)
@@ -241,7 +257,7 @@ def generate_beautiful_excel(df):
         cell.fill = fill_header
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         cell.border = thin_border
-    ws.row_dimensions[3].height = 28
+    ws.row_dimensions[3].height = 25
 
     current_row = 4
     for _, item in df.iterrows():
@@ -252,7 +268,8 @@ def generate_beautiful_excel(df):
         ]
         
         for col_idx, val in enumerate(row_values, 1):
-            cell = ws.cell(row=current_row, column=col_idx, value=str(val) if val else "")
+            val_str = clean_status(val) if val else ""
+            cell = ws.cell(row=current_row, column=col_idx, value=val_str)
             cell.font = font_data
             cell.border = thin_border
             if current_row % 2 == 0: cell.fill = fill_zebra
@@ -260,18 +277,12 @@ def generate_beautiful_excel(df):
             if col_idx in [1, 3, 4, 6, 8]: cell.alignment = Alignment(horizontal="center", vertical="center")
             else: cell.alignment = Alignment(horizontal="left", vertical="center")
                 
-            if col_idx == 5 and "Overdue" in str(val):
-                cell.fill = fill_alert_red
-                cell.font = font_alert_red
-            if col_idx == 7:
-                if "Overdue" in str(val):
-                    cell.fill = fill_alert_red
-                    cell.font = font_alert_red
-                elif "Due Soon" in str(val):
-                    cell.fill = fill_alert_yellow
-                    cell.font = font_alert_yellow
+            if col_idx in [5, 7]:
+                if "Overdue" in val_str: cell.font = font_red
+                elif "Due Soon" in val_str: cell.font = font_yellow
+                else: cell.font = font_green
                     
-        ws.row_dimensions[current_row].height = 22
+        ws.row_dimensions[current_row].height = 20
         current_row += 1
 
     for col in ws.columns:
@@ -329,8 +340,11 @@ def generate_outstanding_pdf(df):
             <tbody>
     """
     for _, r in df.iterrows():
-        br_color = "#c00000" if "Overdue" in str(r.get('BR Status', '')) else "#2c3e50"
-        ar_color = "#c00000" if "Overdue" in str(r.get('AR Status', '')) else ("#9c6500" if "Due Soon" in str(r.get('AR Status', '')) else "#2c3e50")
+        br_val = clean_status(r.get('BR Status', ''))
+        ar_val = clean_status(r.get('AR Status', ''))
+        
+        br_color = "#ff0000" if "Overdue" in br_val else ("#ff9900" if "Due Soon" in br_val else "#00b050")
+        ar_color = "#ff0000" if "Overdue" in ar_val else ("#ff9900" if "Due Soon" in ar_val else "#00b050")
         
         html += f"""
         <tr>
@@ -338,9 +352,9 @@ def generate_outstanding_pdf(df):
             <td class="text-left">{r.get('Company Name EN', '')}</td>
             <td>{r.get('Incorp Place', '')}</td>
             <td>{r.get('BR Paid By', '')}</td>
-            <td style="color: {br_color}; font-weight: bold;">{r.get('BR Status', '')}</td>
+            <td style="color: {br_color}; font-weight: bold;">{br_val}</td>
             <td>{r.get('BR Deadline', '')}</td>
-            <td style="color: {ar_color}; font-weight: bold;">{r.get('AR Status', '')}</td>
+            <td style="color: {ar_color}; font-weight: bold;">{ar_val}</td>
             <td>{r.get('AR Deadline', '')}</td>
         </tr>
         """
@@ -381,24 +395,24 @@ if choice == "📊 Dashboard":
             br_dl = get_anniv(current_year, base_date.month, base_date.day)
             ar_dl = br_dl + timedelta(days=42)
             
-            br_status, ar_status = "Normal", "Normal"
+            br_status, ar_status = "🟢 Normal", "🟢 Normal"
             br_dl_str = br_dl.strftime('%Y/%m/%d')
             ar_dl_str = ar_dl.strftime('%Y/%m/%d')
             is_alert = False
             
             if br_by == 'Client':
-                br_status = "Handled by Client"
+                br_status = "✅ Handled by Client"
                 br_dl_str = "N/A"
             else:
                 if not last_br or last_br.year < current_year:
                     days_diff = (br_dl - today).days
-                    if days_diff < 0: br_status, is_alert = "Overdue", True
-                    elif 0 <= days_diff <= 30: br_status, is_alert = "Due Soon", True
+                    if days_diff < 0: br_status, is_alert = "🔴 Overdue", True
+                    elif 0 <= days_diff <= 30: br_status, is_alert = "🟡 Due Soon", True
             
             if not last_ar or last_ar.year < current_year:
                 days_diff = (ar_dl - today).days
-                if days_diff < 0: ar_status, is_alert = "Overdue", True
-                elif 0 <= days_diff <= 30: ar_status, is_alert = "Due Soon", True
+                if days_diff < 0: ar_status, is_alert = "🔴 Overdue", True
+                elif 0 <= days_diff <= 30: ar_status, is_alert = "🟡 Due Soon", True
                     
             if is_alert:
                 outstanding_records.append({
@@ -423,9 +437,9 @@ if choice == "📊 Dashboard":
             if t2.button("🔄 Refresh"): st.rerun()
             df_filtered = df_raw if filter_g == "All Groups" else df_raw[df_raw['client_group'] == filter_g]
             
-            if 'sel_v144' not in st.session_state: st.session_state.sel_v144 = False
-            if t3.button("✅ Select All"): st.session_state.sel_v144 = True; st.rerun()
-            if t4.button("🧹 Clear All"): st.session_state.sel_v144 = False; st.rerun()
+            if 'sel_v145' not in st.session_state: st.session_state.sel_v145 = False
+            if t3.button("✅ Select All"): st.session_state.sel_v145 = True; st.rerun()
+            if t4.button("🧹 Clear All"): st.session_state.sel_v145 = False; st.rerun()
             
             existing_cols = [c for c in TEMPLATE_COLS if c in df_filtered.columns]
             df_display = df_filtered[existing_cols].copy()
@@ -433,7 +447,7 @@ if choice == "📊 Dashboard":
             df_display['br_paid_by'] = df_display['br_paid_by'].fillna('Firm').astype(str)
             df_display.rename(columns={'name_en': 'Company Name EN'}, inplace=True)
             df_display.set_index('Company Name EN', inplace=True)
-            df_display.insert(0, "Select", st.session_state.sel_v144)
+            df_display.insert(0, "Select", st.session_state.sel_v145)
             
             st.markdown(f"📈 Total: **{len(df_filtered)}** companies in current view.")
             st.info("💡 **Batch Editor instructions:** The Company Name is frozen on the left. Double-click the ✏️ columns to edit. Click **Save Batch Edits** below to apply.")
@@ -450,10 +464,10 @@ if choice == "📊 Dashboard":
                 }, 
                 disabled=disabled_cols,
                 use_container_width=True, 
-                key="dash_v144"
+                key="dash_v145"
             )
             
-            if st.button("💾 Save Batch Edits", key="btn_save_grid_v144"):
+            if st.button("💾 Save Batch Edits", key="btn_save_grid_v145"):
                 try:
                     with engine.begin() as conn:
                         for comp_name, r in edit_df.iterrows():
@@ -474,14 +488,16 @@ if choice == "📊 Dashboard":
             selected = edit_df[edit_df["Select"] == True]
             if len(selected) > 0:
                 st.info(f"✅ **{len(selected)}** companies selected for action.")
-                act1, act2 = st.columns([3, 7])
+                act1, act2, act3 = st.columns([2, 2, 6])
                 with act1:
-                    if st.button("📥 Export Selected PDF"):
-                        final_data = df_raw[df_raw['name_en'].isin(selected.index.tolist())]
-                        st.download_button(label="Download Report", data=generate_custom_pdf(final_data), file_name="Company_Report.pdf", mime="application/pdf")
-                with act2.popover("🧨 BATCH DELETE"):
-                    st.error("🛑 DANGER ZONE"); conf_b = st.text_input("Type DELETE", key="batch_del_v144")
-                    if st.button("Confirm Batch Delete", disabled=(conf_b != "DELETE"), key="btn_batch_del_v144"):
+                    final_data = df_raw[df_raw['name_en'].isin(selected.index.tolist())]
+                    st.download_button(label="📥 Export PDF", data=generate_custom_pdf(final_data), file_name="Company_Report.pdf", mime="application/pdf")
+                with act2:
+                    excel_data = generate_general_excel(final_data)
+                    st.download_button(label="📥 Export Excel", data=excel_data, file_name="Company_Data.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                with act3.popover("🧨 BATCH DELETE"):
+                    st.error("🛑 DANGER ZONE"); conf_b = st.text_input("Type DELETE", key="batch_del_v145")
+                    if st.button("Confirm Batch Delete", disabled=(conf_b != "DELETE"), key="btn_batch_del_v145"):
                         df_raw[~df_raw["name_en"].isin(selected.index.tolist())].to_sql('companies', engine, if_exists='replace', index=False); st.rerun()
 
         with tab2:
@@ -495,13 +511,13 @@ if choice == "📊 Dashboard":
                 
                 df_alerts_filtered = df_alerts if filter_alert_g == "All Groups" else df_alerts[df_alerts['Client Group'] == filter_alert_g]
                 
-                if 'sel_alert_v144' not in st.session_state: st.session_state.sel_alert_v144 = False
-                if ta3.button("✅ Select All", key="sel_all_alert"): st.session_state.sel_alert_v144 = True; st.rerun()
-                if ta4.button("🧹 Clear All", key="clr_all_alert"): st.session_state.sel_alert_v144 = False; st.rerun()
+                if 'sel_alert_v145' not in st.session_state: st.session_state.sel_alert_v145 = False
+                if ta3.button("✅ Select All", key="sel_all_alert"): st.session_state.sel_alert_v145 = True; st.rerun()
+                if ta4.button("🧹 Clear All", key="clr_all_alert"): st.session_state.sel_alert_v145 = False; st.rerun()
                 
                 df_alerts_display = df_alerts_filtered.copy()
                 df_alerts_display.set_index('Company Name EN', inplace=True)
-                df_alerts_display.insert(0, "Select", st.session_state.sel_alert_v144)
+                df_alerts_display.insert(0, "Select", st.session_state.sel_alert_v145)
                 
                 st.markdown(f"📈 Total: **{len(df_alerts_display)}** companies in current view.")
                 
@@ -514,20 +530,20 @@ if choice == "📊 Dashboard":
                     column_config={"Select": st.column_config.CheckboxColumn("Select", default=False)}, 
                     use_container_width=True,
                     disabled=[c for c in df_alerts_display.columns if c != "Select"],
-                    key="alert_grid_v144"
+                    key="alert_grid_v145"
                 )
                 
-                # Retrieve selected rows (Handling styling wrapper)
                 selected_alerts = df_alerts_display[alert_edit["Select"] == True]
                 export_target = selected_alerts.reset_index() if len(selected_alerts) > 0 else None
                 
                 if export_target is not None:
                     st.info(f"✅ **{len(export_target)}** companies selected for export.")
                     c_ex1, c_ex2 = st.columns(2)
-                    excel_data = generate_beautiful_excel(export_target)
-                    c_ex1.download_button("📥 Export Selected to Excel", data=excel_data, file_name="Outstanding_Compliance.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                     pdf_data = generate_outstanding_pdf(export_target)
-                    c_ex2.download_button("📥 Export Selected to PDF", data=pdf_data, file_name="Outstanding_Compliance.pdf", mime="application/pdf")
+                    c_ex1.download_button("📥 Export Selected to PDF", data=pdf_data, file_name="Outstanding_Compliance.pdf", mime="application/pdf")
+                    
+                    excel_data = generate_beautiful_excel(export_target)
+                    c_ex2.download_button("📥 Export Selected to Excel", data=excel_data, file_name="Outstanding_Compliance.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                 else:
                     st.info("💡 Select checkboxes to export specific companies.")
             else:
@@ -652,21 +668,21 @@ elif choice == "🏢 Company Register":
     st.write("---"); st.header("📝 Compliance Filings")
     st.subheader("📑 Company Secretary Appointment (ND2A)")
     cc1, cc2, cc3, cc4 = st.columns([3, 3, 3, 1])
-    with cc1: n2e = st.date_input("Effective Date (Appt)", value=to_date(d['n2e']), min_value=MIN_DATE, key="n2e_v144")
-    with cc2: n2f = st.date_input("Filing Date (ND2A)", value=to_date(d['n2f']), min_value=MIN_DATE, key="n2f_v144")
+    with cc1: n2e = st.date_input("Effective Date (Appt)", value=to_date(d['n2e']), min_value=MIN_DATE, key="n2e_v145")
+    with cc2: n2f = st.date_input("Filing Date (ND2A)", value=to_date(d['n2f']), min_value=MIN_DATE, key="n2f_v145")
     with cc3:
         st.info("Statutory Period: 15 days")
         if n2e: n2_deadline = (n2e + timedelta(days=15)); st.markdown(f"**Deadline: :red[{n2_deadline}]**") 
-    with cc4: n2d = st.checkbox("Downloaded", value=d['n2d'], key="n2d_v144")
+    with cc4: n2d = st.checkbox("Downloaded", value=d['n2d'], key="n2d_v145")
     
     st.subheader("📑 Company Secretary Resignation (ND4)")
     cc5, cc6, cc7, cc8 = st.columns([3, 3, 3, 1])
-    with cc5: n4e = st.date_input("Effective Date (Resign)", value=to_date(d['n4e']), min_value=MIN_DATE, key="n4e_v144")
-    with cc6: n4f = st.date_input("Filing Date (ND4)", value=to_date(d['n4f']), min_value=MIN_DATE, key="n4f_v144")
+    with cc5: n4e = st.date_input("Effective Date (Resign)", value=to_date(d['n4e']), min_value=MIN_DATE, key="n4e_v145")
+    with cc6: n4f = st.date_input("Filing Date (ND4)", value=to_date(d['n4f']), min_value=MIN_DATE, key="n4f_v145")
     with cc7:
         st.info("Statutory Period: 15 days")
         if n4e: n4_deadline = (n4e + timedelta(days=15)); st.markdown(f"**Deadline: :red[{n4_deadline}]**") 
-    with cc8: n4d = st.checkbox("Downloaded", value=d['n4d'], key="n4d_v144")
+    with cc8: n4d = st.checkbox("Downloaded", value=d['n4d'], key="n4d_v145")
 
     st.write("---"); st.subheader("📍 Address & Contact")
     ca1, ca2 = st.columns(2)
@@ -679,7 +695,7 @@ elif choice == "🏢 Company Register":
     with l3: st.markdown("⚠️ Common Seal Location :red[(Required!)]"); common_l = st.text_input("Seal", value=d['cl'], label_visibility="collapsed")
     st.write("---"); st.markdown("Company Dissolution Date"); dis_date = st.date_input("Dissolution", value=to_date(d['dis']), min_value=MIN_DATE, label_visibility="collapsed")
     
-    row_v144 = {'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'incorp_date': inc_date, 'ci_no': ci_no, 'is_hk_registered': is_hk_reg, 'hk_incorp_date': hk_idate, 'hk_ci_no': hk_ci, 'br_no': br_no, 'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr, 'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l, 'nd2a_eff_date': n2e, 'nd2a_file_date': n2f, 'nd2a_download': n2d, 'nd4_eff_date': n4e, 'nd4_file_date': n4f, 'nd4_download': n4d, 'br_paid_by': br_paid_by, 'last_br_resolved_date': l_br, 'last_ar_filed_date': l_ar, 'dissolution_date': dis_date}
+    row_v145 = {'client_group': client_group, 'name_en': name_en, 'name_ch': name_ch, 'incorp_place': inc_place, 'incorp_place_others': place_others, 'incorp_date': inc_date, 'ci_no': ci_no, 'is_hk_registered': is_hk_reg, 'hk_incorp_date': hk_idate, 'hk_ci_no': hk_ci, 'br_no': br_no, 'co_type': co_type, 'reg_addr': reg_addr, 'corres_addr': corres_addr, 'round_loc': round_l, 'sign_loc': sign_l, 'seal_loc': common_l, 'nd2a_eff_date': n2e, 'nd2a_file_date': n2f, 'nd2a_download': n2d, 'nd4_eff_date': n4e, 'nd4_file_date': n4f, 'nd4_download': n4d, 'br_paid_by': br_paid_by, 'last_br_resolved_date': l_br, 'last_ar_filed_date': l_ar, 'dissolution_date': dis_date}
     
     mandatory_fields = {"Client Group": client_group, "English Name": name_en, "Place": inc_place, "Company Type": co_type, "Registered Address": reg_addr, "Correspondence Address": corres_addr, "Round Chop Location": round_l, "Signature Chop Location": sign_l, "Common Seal Location": common_l}
     
@@ -697,54 +713,54 @@ elif choice == "🏢 Company Register":
     missing = [k for k, v in mandatory_fields.items() if not v or str(v).strip() == ""]
 
     if mode in ["🆕 Add New", "📋 Copy Existing"]:
-        if st.button("💾 Save To Cloud", key="btn_save_v144"):
+        if st.button("💾 Save To Cloud", key="btn_save_v145"):
             if missing: st.error(f"❌ Missing mandatory fields: {', '.join(missing)}")
             else:
                 try:
-                    pd.DataFrame([row_v144]).to_sql('companies', engine, if_exists='append', index=False)
+                    pd.DataFrame([row_v145]).to_sql('companies', engine, if_exists='append', index=False)
                     st.success("✅ Success!"); st.rerun()
                 except Exception as save_err:
                     st.error(f"❌ Save Failed! Error details: {save_err}")
     else:
         u_col, d_col = st.columns(2)
         with u_col.popover("🆙 Update"):
-            if st.button("Confirm Update", key="btn_update_v144"):
+            if st.button("Confirm Update", key="btn_update_v145"):
                 if missing: st.error(f"❌ Missing mandatory fields: {', '.join(missing)}")
                 else:
                     try:
                         df_backup = df_all.copy() 
                         df_all[df_all['name_en'] != target_name].to_sql('companies', engine, if_exists='replace', index=False)
-                        pd.DataFrame([row_v144]).to_sql('companies', engine, if_exists='append', index=False)
+                        pd.DataFrame([row_v145]).to_sql('companies', engine, if_exists='append', index=False)
                         st.success("✅ Updated!"); st.rerun()
                     except Exception as trans_err:
                         df_backup.to_sql('companies', engine, if_exists='replace', index=False)
                         st.error(f"🛑 SQL Error Detected! Rollback completed. Details: {trans_err}")
         with d_col.popover("🚨 DELETE"):
-            st.error(f"Delete {target_name}?"); conf_s = st.text_input("Type DELETE", key="single_del_v144")
-            if st.button("Confirm Delete Company", disabled=(conf_s != "DELETE"), key="btn_del_single_v144"):
+            st.error(f"Delete {target_name}?"); conf_s = st.text_input("Type DELETE", key="single_del_v145")
+            if st.button("Confirm Delete Company", disabled=(conf_s != "DELETE"), key="btn_del_single_v145"):
                 df_all[df_all['name_en'] != target_name].to_sql('companies', engine, if_exists='replace', index=False); st.rerun()
 
 # --- 7. Group Management ---
 elif choice == "⚙️ Group Management":
     st.header("⚙️ Group Management")
-    new_g = st.text_input("New Group Name", key="new_group_input_v144")
-    if st.button("Add Group", key="btn_add_group_v144"): pd.DataFrame([{'group_name': new_g}]).to_sql('client_groups', engine, if_exists='append', index=False); st.rerun()
+    new_g = st.text_input("New Group Name", key="new_group_input_v145")
+    if st.button("Add Group", key="btn_add_group_v145"): pd.DataFrame([{'group_name': new_g}]).to_sql('client_groups', engine, if_exists='append', index=False); st.rerun()
     st.write("---")
     g_df = pd.read_sql("SELECT * FROM client_groups", engine)
     if not g_df.empty:
         g_df = g_df.sort_values(by=['group_name'], na_position='last')
-        target = st.selectbox("Select Group", g_df['group_name'].tolist(), key="select_group_manage_v144")
+        target = st.selectbox("Select Group", g_df['group_name'].tolist(), key="select_group_manage_v145")
         c1, c2 = st.columns(2)
         with c1.popover("✏️ Rename Group"):
-            ren = st.text_input("New Name:", key="rename_input_v144")
-            conf_r = st.text_input("Type RENAME", key="rename_confirm_text_v144")
-            if st.button("Confirm Rename", disabled=(conf_r != "RENAME"), key="btn_group_rename_v144"):
+            ren = st.text_input("New Name:", key="rename_input_v145")
+            conf_r = st.text_input("Type RENAME", key="rename_confirm_text_v145")
+            if st.button("Confirm Rename", disabled=(conf_r != "RENAME"), key="btn_group_rename_v145"):
                 comp_df = pd.read_sql("SELECT * FROM companies", engine)
                 comp_df.loc[comp_df['client_group'] == target, 'client_group'] = ren
                 comp_df.to_sql('companies', engine, if_exists='replace', index=False)
                 g_df.replace({target: ren}).to_sql('client_groups', engine, if_exists='replace', index=False); st.rerun()
         with c2.popover("🗑️ Delete Group"):
-            if st.button("Confirm Delete Group", key="btn_group_delete_v144"): 
+            if st.button("Confirm Delete Group", key="btn_group_delete_v145"): 
                 g_df[g_df['group_name'] != target].to_sql('client_groups', engine, if_exists='replace', index=False); st.rerun()
 
 # --- 8. Data Exchange ---
@@ -765,10 +781,10 @@ elif choice == "📤 Data Exchange":
     for col in ["incorp_date", "hk_incorp_date", "nd2a_eff_date", "nd2a_file_date", "nd4_eff_date", "nd4_file_date", "last_br_resolved_date", "last_ar_filed_date", "dissolution_date"]:
         if col in df_export.columns: df_export[col] = pd.to_datetime(df_export[col], errors='coerce').dt.strftime('%Y-%m-%d')
     buf_e = io.BytesIO(); df_export.to_excel(buf_e, index=False)
-    c2.download_button(label="📦 Export All", data=buf_e.getvalue(), file_name="Backup.xlsx", key="btn_export_all_v144")
+    c2.download_button(label="📦 Export All", data=buf_e.getvalue(), file_name="Backup.xlsx", key="btn_export_all_v145")
     st.write("---")
     
-    up = st.file_uploader("Upload XLSX to Review Changes", type=["xlsx"], key="file_uploader_v144")
+    up = st.file_uploader("Upload XLSX to Review Changes", type=["xlsx"], key="file_uploader_v145")
     if up:
         try:
             up_df = pd.read_excel(up, engine='openpyxl', keep_default_na=False)
@@ -843,7 +859,7 @@ elif choice == "📤 Data Exchange":
                 if diff_list:
                     st.subheader("🔍 Review Changes")
                     st.table(pd.DataFrame(diff_list))
-                    if st.button("🚀 Confirm & Apply Changes", key="btn_final_sync_v144"):
+                    if st.button("🚀 Confirm & Apply Changes", key="btn_final_sync_v145"):
                         combined_df = pd.concat([existing_df, up_df]).drop_duplicates(subset=['_anchor'], keep='last')
                         combined_df = combined_df.drop(columns=['_anchor'])
                         if 'br_paid_by' in combined_df.columns:
